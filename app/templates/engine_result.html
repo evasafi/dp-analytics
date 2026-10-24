@@ -4,7 +4,7 @@
   <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
   <h3>Result {{ rid }}: {{ spec.measure }}{% if dims %} by {{ dims|join(", ") }}{% endif %}</h3>
   {% if spec.filters %}<p>Filters: {% for f in spec.filters %}{{ f[0] }} in {{ f[1]|join(", ") }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
-  <p>Values are noisy. "suppressed" means the noisy count was below {{ suppress_below }}.</p>
+  <p>Values are noisy. "suppressed" means the noisy count was below {{ suppress_below }}. Shown values can still be pure noise: an empty cell occasionally lands above the threshold, so treat small numbers with caution.</p>
   <table border="1" cellpadding="4">
     <tr>{% for d in dims %}<th>{{ d }}</th>{% endfor %}<th>value</th></tr>
     {% for row in rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}

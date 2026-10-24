@@ -1,8 +1,8 @@
-﻿from app.config import settings
+from app.config import settings
 from app.engine import Spec, cell_count, validate
 from app.noise import _laplace
 
-SUPPRESS_BELOW = 20
+SUPPRESS_BELOW = 30
 LO, HI = 0, 500
 
 
