@@ -7,7 +7,7 @@ Run every script from the project root, as a module, with the venv active:
 Evaluation outputs (`eval_accuracy.csv`, `eval_accuracy.png`) stay in the project root.
 
 ## Need only the app role (`dp_app`, from `.env`)
-attack_sim.py (no database), check_audit.py, check_failures.py, check_rows.py, check_truth.py,
+attack_sim.py (no database), test_dp_statistical.py (no database, takes a few minutes), check_audit.py, check_failures.py, check_rows.py, check_truth.py,
 eval_accuracy.py, run_queries.py
 
 ## Prompt for the app accounts' passwords (visible input; dev accounts only)
