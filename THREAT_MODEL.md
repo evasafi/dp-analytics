@@ -127,13 +127,14 @@ Tested (a script in the repo shows it):
 | CSRF tokens are enforced | Forged tokens returned 403 on login, logout, and field submit |
 | Invalid field submissions save nothing | Eight bad inputs all returned 400 and the row count was unchanged |
 | Login lockout fires, refuses the correct password, and expires | `test_ratelimit.py` and `test_ratelimit_expiry.py` |
+| Count and mean-sum noise are statistically consistent with the stated epsilon and sensitivities | `dev/test_dp_statistical.py`: 400,000 samples per input on neighbouring values; worst excess over the epsilon bound was 2.5 SE (count) and 3.0 SE (sum), under a 4 SE threshold. Two deliberately mis-calibrated controls were flagged at 65 and 100 SE. This is an empirical check on the noise only: it cannot detect floating-point leaks, does not test composition, and does not cover the mean as a ratio |
 | Logout clears the session | After sign-out, a typed `/me` returned 401 |
 | Field submissions are capped per agent | `dev/test_field_cap.py`: with a cap of 5, seven submissions gave five 303s then two 429s, with exactly 5 rows and 5 audit rows added |
 | The cap holds under concurrency | `dev/test_field_cap_concurrent.py` (owner password): 20 simultaneous attempts at a cap of 10 gave 10 successes, 10 refusals, 10 audit rows. It reimplements the same lock-and-count SQL, so it proves the locking pattern against the app grants, not the route itself |
 | Two analyst accounts share one budget, and each spend is attributed | `test_collusion.py` (needs the owner password): 20 simultaneous queries from two accounts on a budget of 1.0 gave exactly 10 successes, 10 refusals, final 1.0, audit rows 5 and 5 |
 
 Argued but not tested:
-- The mechanism is epsilon-differentially private with the stated sensitivities. Calibration is tested statistically, but there is no formal proof or privacy auditing test. The mean's sum sensitivity of 500 follows from the SQL clipping and is not measured.
+- Formal epsilon-differential privacy. There is no proof and no formal audit. The sum sensitivity of 500 follows from the SQL clipping and is argued, not measured. The histogram's privacy follows from the count mechanism being applied per disjoint bin.
 - A stolen database yields only hashes and pseudonymous plain-text records. Not attempted.
 - The audit log is append-only against the app role. Tested for `dp_app`; the owner is outside this claim.
 
