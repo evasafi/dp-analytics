@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}My results{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (analyst). <a href="/analyst">New query</a></p>
+  <h3>My past results (opening one is free)</h3>
+  {% if not rows %}<p>No results yet.</p>{% else %}
+  <table>
+    <tr><th>Time</th><th>Measure</th><th>Group by</th><th>Cost</th><th></th></tr>
+    {% for r in rows %}
+    <tr><td>{{ r.ts.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ r.spec.measure }}</td>
+        <td>{{ r.spec.group_by|join(", ") or "none" }}</td><td>{{ r.epsilon_charged }}</td>
+        <td><a href="/engine/result/{{ r.id }}">open</a> | <a href="/engine/result/{{ r.id }}/csv">csv</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+{% endblock %}

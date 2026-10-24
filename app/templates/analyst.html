@@ -1,49 +1,59 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Analyst{% endblock %}
 {% block content %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
-  <p>Privacy budget: <strong>{{ "%.1f"|format(budget.remaining) }}</strong> remaining of
-     {{ "%.1f"|format(budget.total) }} (spent {{ "%.1f"|format(budget.spent) }}).</p>
+  <p>Signed in as <strong>{{ user.username }}</strong> (analyst).
+     <a href="/engine/results">My past results</a></p>
+  <p>Privacy budget: <strong>{{ "%.1f"|format(budget.remaining) }}</strong> remaining of {{ "%.1f"|format(budget.total) }}</p>
+  <progress value="{{ budget.spent|float }}" max="{{ budget.total|float }}"></progress>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-  {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
-
-  {% if label %}
-    <h3>Result: {{ label }}</h3>
-    {% if refused %}
-      <p>Refused: {{ refused }}. This query was still charged.</p>
-    {% elif kind == "histogram" %}
-      <table border="1" cellpadding="4">
-        <tr><th>Household size</th><th>Noisy count</th></tr>
-        {% for size, n in result.items() %}<tr><td>{{ size }}</td><td>{{ n }}</td></tr>{% endfor %}
-      </table>
-    {% else %}
-      <p><strong>{{ result }}</strong></p>
-    {% endif %}
-  {% endif %}
-
-  <h3>Count by region (costs {{ costs.count }})</h3>
-  <form method="post" action="/query/count">
+  <h3>New query</h3>
+  <form method="post" action="/engine/preview" id="qb">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <select name="region">{% for r in regions %}<option>{{ r }}</option>{% endfor %}</select>
-    <button type="submit">Run</button>
+    <fieldset><legend>Measure</legend>
+      <label><input type="radio" name="measure" value="count" checked> Count of people</label>
+      <label><input type="radio" name="measure" value="mean"> Mean monthly transfer</label>
+    </fieldset>
+    <fieldset><legend>Group by (up to two)</legend>
+      {% for i in (1, 2) %}
+      <select name="group_by" class="gb">
+        <option value="">(none)</option>
+        <option value="region">region</option>
+        <option value="household_size">household size</option>
+        <option value="transfer_band">transfer band</option>
+      </select>
+      {% endfor %}
+    </fieldset>
+    <fieldset class="checks"><legend>Filters (leave all unticked for no filter)</legend>
+      <p>Region: {% for r in regions %}<label><input type="checkbox" name="f_region" value="{{ r }}"> {{ r }}</label>{% endfor %}</p>
+      <p>Household size: {% for h in range(1, 13) %}<label><input type="checkbox" name="f_household_size" value="{{ h }}"> {{ h }}</label>{% endfor %}</p>
+      <p>Transfer band: {% for b in range(10) %}<label><input type="checkbox" name="f_transfer_band" value="{{ b }}"> {{ b*50 }}-{{ b*50+50 }}</label>{% endfor %}</p>
+    </fieldset>
+    <p id="hint" class="note"></p>
+    <button type="submit">Preview (free)</button>
   </form>
-
-  <h3>Mean monthly transfer by region (costs {{ costs.mean }})</h3>
-  <form method="post" action="/query/mean">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <select name="region">{% for r in regions %}<option>{{ r }}</option>{% endfor %}</select>
-    <button type="submit">Run</button>
-  </form>
-
-  <h3>Household size histogram (costs {{ costs.histogram }})</h3>
-  <form method="post" action="/query/histogram">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button type="submit">Run</button>
-  </form>
+  <p class="note">Preview shows the cost and expected error. Nothing is charged until you confirm.</p>
 
   <hr>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">Sign out</button>
   </form>
+  <script>
+    (function () {
+      var size = {region: 8, household_size: 12, transfer_band: 10};
+      var cost = {count: {{ costs.count }}, mean: {{ costs.mean }}};
+      function update() {
+        var m = document.querySelector('input[name=measure]:checked').value;
+        var cells = 1, seen = {};
+        document.querySelectorAll('.gb').forEach(function (s) {
+          if (s.value && !seen[s.value]) { cells *= size[s.value]; seen[s.value] = 1; }
+        });
+        document.getElementById('hint').textContent =
+          'Cost: ' + cost[m] + ' of the budget, ' + cells + ' cell(s). The server checks everything again.';
+      }
+      document.getElementById('qb').addEventListener('change', update);
+      update();
+    })();
+  </script>
 {% endblock %}

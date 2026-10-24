@@ -267,6 +267,7 @@ def _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band):
         filters.append(("household_size", tuple(int(v) for v in f_household_size)))
     if f_transfer_band:
         filters.append(("transfer_band", tuple(int(v) for v in f_transfer_band)))
+    group_by = [g for g in group_by if g]   # blank dropdowns mean no grouping
     spec = Spec(measure, tuple(group_by), tuple(filters))
     validate(spec)
     return spec
@@ -357,3 +358,19 @@ def engine_result_csv(rid: int, user=Depends(require_role("analyst"))):
         w.writerow(list(k) + [_show(v)])
     return Response(buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="result_{rid}.csv"'})
+
+# ---------------- builder ----------------
+from fastapi.staticfiles import StaticFiles
+
+
+@app.get("/engine/results")
+def engine_results(request: Request, user=Depends(require_role("analyst"))):
+    with engine.connect() as c:
+        rows = c.execute(text(
+            "SELECT r.id, r.ts, r.spec, a.epsilon_charged FROM results r "
+            "JOIN audit_log a ON a.id = r.audit_id WHERE r.user_id = :u "
+            "ORDER BY r.id DESC LIMIT 50"), {"u": user.id}).all()
+    return render(request, "engine_list.html", user=user, rows=rows)
+
+
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
