@@ -43,7 +43,7 @@ Goal: learn about individuals from query answers.
 Goal: pool queries across accounts to get more than one analyst could.
 - All analysts draw on one global budget per dataset, so extra accounts do not multiply the privacy loss.
 - Residual risk: denial of service. One analyst can spend the whole budget and lock everyone else out. Per-user caps were in the original design as optional and are not implemented.
-- Not tested: no script runs two analyst accounts against one budget.
+- Tested: `test_collusion.py` runs two analyst accounts against one budget (see section 5). Combining answers across accounts is argued from composition, not tested.
 
 ### 2.3 Stolen database
 
