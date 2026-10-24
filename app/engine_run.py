@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import json
 
 from sqlalchemy import text
@@ -21,10 +21,18 @@ def run_query(conn, user_id: int, dataset_id: int, spec: Spec) -> dict:
     noisy = noisy_cells(truth, spec)
     cells = [[list(k), noisy[k]] for k in sorted(noisy)]
     digest = hashlib.sha256(json.dumps(cells).encode()).hexdigest()
-    conn.execute(
+    spec_json = json.dumps(_spec_params(spec), sort_keys=True)
+    audit_id = conn.execute(
         text("INSERT INTO audit_log (user_id, dataset_id, query_type, params, "
-             "epsilon_charged, result_hash) VALUES (:u, :d, :q, CAST(:p AS jsonb), :e, :h)"),
+             "epsilon_charged, result_hash) VALUES (:u, :d, :q, CAST(:p AS jsonb), :e, :h) RETURNING id"),
         {"u": user_id, "d": dataset_id, "q": "engine_" + spec.measure,
-         "p": json.dumps(_spec_params(spec), sort_keys=True), "e": eps, "h": digest},
-    )
-    return {"epsilon": eps, "cells": {tuple(k): v for k, v in cells}}
+         "p": spec_json, "e": eps, "h": digest},
+    ).scalar_one()
+    result_id = conn.execute(
+        text("INSERT INTO results (user_id, dataset_id, audit_id, spec, cells) "
+             "VALUES (:u, :d, :a, CAST(:s AS jsonb), CAST(:c AS jsonb)) RETURNING id"),
+        {"u": user_id, "d": dataset_id, "a": audit_id, "s": spec_json,
+         "c": json.dumps(cells)},
+    ).scalar_one()
+    return {"epsilon": eps, "cells": {tuple(k): v for k, v in cells},
+            "audit_id": audit_id, "result_id": result_id}
