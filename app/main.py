@@ -162,3 +162,60 @@ def query_histogram(request: Request, csrf: str = Form(...),
                     user=Depends(require_role("analyst"))):
     return _run_query(request, user, csrf, "household size histogram", "histogram",
                       lambda c: household_histogram(c, user.id, DATASET_ID))
+
+
+# ---------------- field agent routes ----------------
+import json
+from decimal import Decimal, InvalidOperation
+
+from sqlalchemy.exc import IntegrityError
+
+
+def _valid_submission(region, household_size, transfer_text):
+    """Return the transfer as a Decimal if everything is valid, else None."""
+    try:
+        transfer = Decimal(transfer_text).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return None
+    if not transfer.is_finite():
+        return None
+    if region not in REGIONS or not 1 <= household_size <= 12:
+        return None
+    if not Decimal(0) <= transfer <= Decimal(500):
+        return None
+    return transfer
+
+
+@app.get("/field")
+def field_page(request: Request, done: int = 0,
+               user=Depends(require_role("field_agent"))):
+    return render(request, "field.html", user=user, done=bool(done), regions=REGIONS)
+
+
+@app.post("/field/submit")
+def field_submit(request: Request, region: str = Form(...),
+                 household_size: int = Form(...), monthly_transfer: str = Form(...),
+                 csrf: str = Form(...), user=Depends(require_role("field_agent"))):
+    check_csrf(request, csrf)
+    transfer = _valid_submission(region, household_size, monthly_transfer)
+    if transfer is None:
+        return render(request, "field.html", status_code=400, user=user, done=False,
+                      regions=REGIONS, error="Invalid values. Nothing was saved.")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO beneficiaries (dataset_id, beneficiary_id, region, "
+                     "household_size, monthly_transfer) VALUES (:d, :b, :r, :h, :t)"),
+                {"d": DATASET_ID, "b": secrets.token_hex(8), "r": region,
+                 "h": household_size, "t": transfer},
+            )
+            conn.execute(
+                text("INSERT INTO audit_log (user_id, dataset_id, query_type, params, "
+                     "epsilon_charged, result_hash) VALUES "
+                     "(:u, :d, 'submit', CAST(:p AS jsonb), 0, 'n/a')"),
+                {"u": user.id, "d": DATASET_ID, "p": json.dumps({})},
+            )
+    except IntegrityError:
+        return render(request, "field.html", status_code=500, user=user, done=False,
+                      regions=REGIONS, error="Could not save. Please try again.")
+    return RedirectResponse("/field?done=1", status_code=303)
