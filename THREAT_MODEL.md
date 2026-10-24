@@ -136,4 +136,4 @@ Argued but not tested:
 
 ## 6. Reproducing
 
-`requirements.txt` pins the environment. `schema.sql` builds the database. `seed.py` creates 5,000 synthetic beneficiaries. Settings and secrets live in `.env` (see the project notes; a `.env.example` is still to be added).
+`requirements.txt` pins the environment. `schema.sql` builds the database. `seed.py` creates 5,000 synthetic beneficiaries. Settings and secrets live in `.env`; copy `.env.example` to `.env` and fill in the placeholders.
