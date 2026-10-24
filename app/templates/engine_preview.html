@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Preview{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
+  <h3>Preview (nothing has been charged yet)</h3>
+  <ul>
+    <li>Cost: <strong>{{ est.epsilon }}</strong> of the privacy budget</li>
+    <li>Cells returned: {{ est.cells }}</li>
+    <li>Typical error: {{ est.typical_error }}</li>
+    <li>Cells with a noisy value below {{ est.suppress_below }} are shown as "suppressed"</li>
+    <li>Budget now: {{ "%.1f"|format(remaining) }}, after this query: {{ "%.1f"|format(after) }}</li>
+  </ul>
+  {% if after < 0 %}<p><strong>Not enough budget: this query would be refused.</strong></p>{% endif %}
+  <form method="post" action="/engine/run">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% for name, value in fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <button type="submit">Run and charge {{ est.epsilon }}</button>
+  </form>
+  <p><a href="/analyst">Back</a></p>
+{% endblock %}

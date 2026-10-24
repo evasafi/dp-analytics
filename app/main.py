@@ -246,3 +246,114 @@ def admin_page(request: Request, user=Depends(require_role("admin"))):
             "ORDER BY a.id DESC LIMIT 50")).all()
     return render(request, "admin.html", user=user, budget=_budget(), rows=rows)
 
+
+
+# ---------------- engine routes ----------------
+import csv
+import io
+
+from fastapi.responses import Response
+
+from app.engine import Spec, validate
+from app.engine_noise import SUPPRESS_BELOW, estimate
+from app.engine_run import run_query
+
+
+def _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band):
+    filters = []
+    if f_region:
+        filters.append(("region", tuple(f_region)))
+    if f_household_size:
+        filters.append(("household_size", tuple(int(v) for v in f_household_size)))
+    if f_transfer_band:
+        filters.append(("transfer_band", tuple(int(v) for v in f_transfer_band)))
+    spec = Spec(measure, tuple(group_by), tuple(filters))
+    validate(spec)
+    return spec
+
+
+def _fields(measure, group_by, f_region, f_household_size, f_transfer_band):
+    out = [("measure", measure)]
+    out += [("group_by", g) for g in group_by]
+    out += [("f_region", v) for v in f_region]
+    out += [("f_household_size", v) for v in f_household_size]
+    out += [("f_transfer_band", v) for v in f_transfer_band]
+    return out
+
+
+@app.post("/engine/preview")
+def engine_preview(request: Request, measure: str = Form(...),
+                   group_by: list[str] = Form(default=[]),
+                   f_region: list[str] = Form(default=[]),
+                   f_household_size: list[str] = Form(default=[]),
+                   f_transfer_band: list[str] = Form(default=[]),
+                   csrf: str = Form(...), user=Depends(require_role("analyst"))):
+    check_csrf(request, csrf)
+    try:
+        spec = _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band)
+    except ValueError:
+        return _analyst_page(request, user, status_code=400,
+                             error="Invalid query. Nothing was charged.")
+    est = estimate(spec)
+    budget = _budget()
+    after = budget["remaining"] - Decimal(str(est["epsilon"]))
+    return render(request, "engine_preview.html", user=user, est=est,
+                  remaining=budget["remaining"], after=after,
+                  fields=_fields(measure, group_by, f_region, f_household_size, f_transfer_band))
+
+
+@app.post("/engine/run")
+def engine_run(request: Request, measure: str = Form(...),
+               group_by: list[str] = Form(default=[]),
+               f_region: list[str] = Form(default=[]),
+               f_household_size: list[str] = Form(default=[]),
+               f_transfer_band: list[str] = Form(default=[]),
+               csrf: str = Form(...), user=Depends(require_role("analyst"))):
+    check_csrf(request, csrf)
+    try:
+        spec = _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band)
+        with engine.begin() as conn:
+            res = run_query(conn, user.id, DATASET_ID, spec)
+    except BudgetExhausted:
+        return _analyst_page(request, user, status_code=409,
+                             error="Privacy budget exhausted. No answer was released.")
+    except ValueError:
+        return _analyst_page(request, user, status_code=400,
+                             error="Invalid query. Nothing was charged.")
+    return RedirectResponse(f"/engine/result/{res['result_id']}", status_code=303)
+
+
+def _load_result(rid: int, user):
+    with engine.connect() as c:
+        row = c.execute(
+            text("SELECT id, spec, cells FROM results WHERE id = :r AND user_id = :u"),
+            {"r": rid, "u": user.id}).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return row
+
+
+def _show(v):
+    if v is None:
+        return "suppressed"
+    return v if isinstance(v, int) else round(v, 1)
+
+
+@app.get("/engine/result/{rid}")
+def engine_result(request: Request, rid: int, user=Depends(require_role("analyst"))):
+    row = _load_result(rid, user)
+    rows = [[*k, _show(v)] for k, v in row.cells]
+    return render(request, "engine_result.html", user=user, rid=rid, spec=row.spec,
+                  dims=row.spec["group_by"], rows=rows, suppress_below=SUPPRESS_BELOW)
+
+
+@app.get("/engine/result/{rid}/csv")
+def engine_result_csv(rid: int, user=Depends(require_role("analyst"))):
+    row = _load_result(rid, user)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(list(row.spec["group_by"]) + ["value"])
+    for k, v in row.cells:
+        w.writerow(list(k) + [_show(v)])
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="result_{rid}.csv"'})
