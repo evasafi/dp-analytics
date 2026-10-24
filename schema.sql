@@ -1,4 +1,4 @@
-﻿-- Users and roles (role enforced again in the API layer)
+-- Users and roles (role enforced again in the API layer)
 CREATE TABLE users (
     id            bigserial PRIMARY KEY,
     username      text NOT NULL UNIQUE,
