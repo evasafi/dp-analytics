@@ -1,4 +1,4 @@
--- Users and roles (role enforced again in the API layer)
+﻿-- Users and roles (role enforced again in the API layer)
 CREATE TABLE users (
     id            bigserial PRIMARY KEY,
     username      text NOT NULL UNIQUE,
@@ -57,7 +57,7 @@ CREATE TABLE audit_log (
 );
 
 -- Seed the one dataset, with the placeholder budget from config
-INSERT INTO datasets (name, epsilon_total) VALUES ('assistance_program', 5.0);
+INSERT INTO datasets (name, epsilon_total) VALUES ('assistance_program', 10.0);
 
 -- Privileges for the app role: only what it needs
 GRANT USAGE ON SCHEMA public TO dp_app;
