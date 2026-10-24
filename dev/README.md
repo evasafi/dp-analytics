@@ -19,3 +19,6 @@ These create throwaway datasets and accounts and reset budget state. Never run t
 
 ## Not in the repo (gitignored, owner credentials)
 dev_reset.py, set_budget.py, cleanup_final.py
+
+## Field cap tests
+test_field_cap.py prompts for field1's password and adds 5 records to the real dataset; run it only before a cleanup. test_field_cap_concurrent.py needs the owner password and uses a throwaway dataset and account.

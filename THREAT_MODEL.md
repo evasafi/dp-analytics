@@ -58,7 +58,8 @@ Goal: read data back, probe for records, or corrupt the dataset.
 - The role is write-only. The submit page returns only "Submitted" and no ID. Tests show an agent gets 403 on all analyst and admin routes.
 - Server-generated pseudonyms mean an agent cannot probe which IDs exist.
 - Every submission writes an audit row.
-- Residual risk: data poisoning. There is no cap on submissions, so an agent can flood the dataset with fake records and shift every later answer. Clipping to [0, 500] bounds the effect of any one record but not of many.
+- Each agent is capped at 200 submissions per 24 hours (`DP_FIELD_DAILY_CAP`), counted from the audit log, with an advisory lock so concurrent requests cannot exceed it. Over the cap the route returns 429 and saves nothing.
+- Residual risk: data poisoning is slowed, not stopped. A patient attacker staying under the cap still shifts the data over weeks, and clipping to [0, 500] bounds one record but not many. The audit log makes the volume visible to the admin.
 
 ### 2.5 Admin
 
@@ -127,6 +128,8 @@ Tested (a script in the repo shows it):
 | Invalid field submissions save nothing | Eight bad inputs all returned 400 and the row count was unchanged |
 | Login lockout fires, refuses the correct password, and expires | `test_ratelimit.py` and `test_ratelimit_expiry.py` |
 | Logout clears the session | After sign-out, a typed `/me` returned 401 |
+| Field submissions are capped per agent | `dev/test_field_cap.py`: with a cap of 5, seven submissions gave five 303s then two 429s, with exactly 5 rows and 5 audit rows added |
+| The cap holds under concurrency | `dev/test_field_cap_concurrent.py` (owner password): 20 simultaneous attempts at a cap of 10 gave 10 successes, 10 refusals, 10 audit rows. It reimplements the same lock-and-count SQL, so it proves the locking pattern against the app grants, not the route itself |
 | Two analyst accounts share one budget, and each spend is attributed | `test_collusion.py` (needs the owner password): 20 simultaneous queries from two accounts on a budget of 1.0 gave exactly 10 successes, 10 refusals, final 1.0, audit rows 5 and 5 |
 
 Argued but not tested:
