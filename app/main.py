@@ -1,4 +1,4 @@
-﻿import secrets
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -209,6 +209,15 @@ def field_submit(request: Request, region: str = Form(...),
                       regions=REGIONS, error="Invalid values. Nothing was saved.")
     try:
         with engine.begin() as conn:
+            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7000000 + user.id})
+            used = conn.execute(
+                text("SELECT count(*) FROM audit_log WHERE user_id = :u AND "
+                     "query_type = 'submit' AND ts > now() - interval '24 hours'"),
+                {"u": user.id}).scalar_one()
+            if used >= settings.field_daily_cap:
+                return render(request, "field.html", status_code=429, user=user, done=False,
+                              regions=REGIONS,
+                              error="Daily submission limit reached. Nothing was saved.")
             conn.execute(
                 text("INSERT INTO beneficiaries (dataset_id, beneficiary_id, region, "
                      "household_size, monthly_transfer) VALUES (:d, :b, :r, :h, :t)"),
