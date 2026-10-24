@@ -86,3 +86,79 @@ def logout(request: Request, csrf: str = Form(...)):
 def me(request: Request):
     user = current_user(request)
     return render(request, "me.html", user=user)
+
+
+# ---------------- analyst routes ----------------
+from fastapi import Depends
+from sqlalchemy import text
+
+from app.auth import require_role
+from app.budget import BudgetExhausted
+from app.db import engine
+from app.queries import (REGIONS, Refused, count_by_region,
+                         household_histogram, mean_transfer)
+
+DATASET_ID = 1
+
+
+def _budget():
+    with engine.connect() as c:
+        row = c.execute(
+            text("SELECT epsilon_total, epsilon_spent FROM datasets WHERE id = :d"),
+            {"d": DATASET_ID},
+        ).one()
+    return {"total": row.epsilon_total, "spent": row.epsilon_spent,
+            "remaining": row.epsilon_total - row.epsilon_spent}
+
+
+def _analyst_page(request: Request, user, status_code: int = 200, **ctx):
+    costs = {"count": settings.epsilon_per_count,
+             "histogram": settings.epsilon_per_histogram,
+             "mean": settings.epsilon_per_mean}
+    return render(request, "analyst.html", status_code=status_code, user=user,
+                  budget=_budget(), regions=REGIONS, costs=costs, **ctx)
+
+
+def _run_query(request, user, csrf, label, kind, fn):
+    check_csrf(request, csrf)
+    try:
+        with engine.begin() as conn:
+            result = fn(conn)
+    except BudgetExhausted:
+        return _analyst_page(request, user, status_code=409,
+                             error="Privacy budget exhausted. No answer was released.")
+    except ValueError:
+        return _analyst_page(request, user, status_code=400,
+                             error="Invalid request.")
+    if isinstance(result, Refused):
+        return _analyst_page(request, user, label=label, kind=kind,
+                             refused=result.reason)
+    return _analyst_page(request, user, label=label, kind=kind, result=result)
+
+
+@app.get("/analyst")
+def analyst_page(request: Request, user=Depends(require_role("analyst"))):
+    return _analyst_page(request, user)
+
+
+@app.post("/query/count")
+def query_count(request: Request, region: str = Form(...), csrf: str = Form(...),
+                user=Depends(require_role("analyst"))):
+    return _run_query(request, user, csrf, f"count, {region}", "count",
+                      lambda c: count_by_region(c, user.id, DATASET_ID, region))
+
+
+@app.post("/query/mean")
+def query_mean(request: Request, region: str = Form(...), csrf: str = Form(...),
+               user=Depends(require_role("analyst"))):
+    def fn(c):
+        r = mean_transfer(c, user.id, DATASET_ID, region)
+        return r if isinstance(r, Refused) else round(r, 1)
+    return _run_query(request, user, csrf, f"mean transfer, {region}", "mean", fn)
+
+
+@app.post("/query/histogram")
+def query_histogram(request: Request, csrf: str = Form(...),
+                    user=Depends(require_role("analyst"))):
+    return _run_query(request, user, csrf, "household size histogram", "histogram",
+                      lambda c: household_histogram(c, user.id, DATASET_ID))

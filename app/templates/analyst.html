@@ -1,0 +1,49 @@
+﻿{% extends "base.html" %}
+{% block title %}Analyst{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
+  <p>Privacy budget: <strong>{{ "%.1f"|format(budget.remaining) }}</strong> remaining of
+     {{ "%.1f"|format(budget.total) }} (spent {{ "%.1f"|format(budget.spent) }}).</p>
+
+  {% if error %}<p><strong>{{ error }}</strong></p>{% endif %}
+
+  {% if label %}
+    <h3>Result: {{ label }}</h3>
+    {% if refused %}
+      <p>Refused: {{ refused }}. This query was still charged.</p>
+    {% elif kind == "histogram" %}
+      <table border="1" cellpadding="4">
+        <tr><th>Household size</th><th>Noisy count</th></tr>
+        {% for size, n in result.items() %}<tr><td>{{ size }}</td><td>{{ n }}</td></tr>{% endfor %}
+      </table>
+    {% else %}
+      <p><strong>{{ result }}</strong></p>
+    {% endif %}
+  {% endif %}
+
+  <h3>Count by region (costs {{ costs.count }})</h3>
+  <form method="post" action="/query/count">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <select name="region">{% for r in regions %}<option>{{ r }}</option>{% endfor %}</select>
+    <button type="submit">Run</button>
+  </form>
+
+  <h3>Mean monthly transfer by region (costs {{ costs.mean }})</h3>
+  <form method="post" action="/query/mean">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <select name="region">{% for r in regions %}<option>{{ r }}</option>{% endfor %}</select>
+    <button type="submit">Run</button>
+  </form>
+
+  <h3>Household size histogram (costs {{ costs.histogram }})</h3>
+  <form method="post" action="/query/histogram">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Run</button>
+  </form>
+
+  <hr>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Sign out</button>
+  </form>
+{% endblock %}
