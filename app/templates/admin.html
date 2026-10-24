@@ -1,0 +1,28 @@
+﻿{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (admin).</p>
+  <p>Privacy budget: spent <strong>{{ "%.1f"|format(budget.spent) }}</strong> of
+     {{ "%.1f"|format(budget.total) }} ({{ "%.1f"|format(budget.remaining) }} remaining).</p>
+
+  <h3>Audit log (latest 50)</h3>
+  <table border="1" cellpadding="4">
+    <tr><th>Time</th><th>User</th><th>Type</th><th>Parameters</th><th>Epsilon</th><th>Result hash</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.ts.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ r.username }}</td>
+      <td>{{ r.query_type }}</td>
+      <td>{{ r.params }}</td>
+      <td>{{ r.epsilon_charged }}</td>
+      <td>{{ r.result_hash[:12] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <hr>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">Sign out</button>
+  </form>
+{% endblock %}

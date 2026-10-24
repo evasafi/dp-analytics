@@ -219,3 +219,14 @@ def field_submit(request: Request, region: str = Form(...),
         return render(request, "field.html", status_code=500, user=user, done=False,
                       regions=REGIONS, error="Could not save. Please try again.")
     return RedirectResponse("/field?done=1", status_code=303)
+
+
+# ---------------- admin routes ----------------
+@app.get("/admin")
+def admin_page(request: Request, user=Depends(require_role("admin"))):
+    with engine.connect() as c:
+        rows = c.execute(text(
+            "SELECT a.ts, u.username, a.query_type, a.params, a.epsilon_charged, "
+            "a.result_hash FROM audit_log a JOIN users u ON u.id = a.user_id "
+            "ORDER BY a.id DESC LIMIT 50")).all()
+    return render(request, "admin.html", user=user, budget=_budget(), rows=rows)
