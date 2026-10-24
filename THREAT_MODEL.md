@@ -127,10 +127,10 @@ Tested (a script in the repo shows it):
 | Invalid field submissions save nothing | Eight bad inputs all returned 400 and the row count was unchanged |
 | Login lockout fires, refuses the correct password, and expires | `test_ratelimit.py` and `test_ratelimit_expiry.py` |
 | Logout clears the session | After sign-out, a typed `/me` returned 401 |
+| Two analyst accounts share one budget, and each spend is attributed | `test_collusion.py` (needs the owner password): 20 simultaneous queries from two accounts on a budget of 1.0 gave exactly 10 successes, 10 refusals, final 1.0, audit rows 5 and 5 |
 
 Argued but not tested:
 - The mechanism is epsilon-differentially private with the stated sensitivities. Calibration is tested statistically, but there is no formal proof or privacy auditing test. The mean's sum sensitivity of 500 follows from the SQL clipping and is not measured.
-- Colluding analysts share one budget. True by schema, but no test runs two analyst accounts.
 - A stolen database yields only hashes and pseudonymous plain-text records. Not attempted.
 - The audit log is append-only against the app role. Tested for `dp_app`; the owner is outside this claim.
 
