@@ -50,10 +50,11 @@ def check_csrf(request: Request, form_token: str):
 @app.get("/")
 def root(request: Request):
     try:
-        current_user(request)
+        user = current_user(request)
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
-    return RedirectResponse("/me", status_code=303)
+    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin"}
+    return RedirectResponse(home.get(user.role, "/me"), status_code=303)
 
 
 @app.get("/login")
@@ -125,49 +126,9 @@ def _analyst_page(request: Request, user, status_code: int = 200, **ctx):
                   budget=_budget(), regions=REGIONS, costs=costs, **ctx)
 
 
-def _run_query(request, user, csrf, label, kind, fn):
-    check_csrf(request, csrf)
-    try:
-        with engine.begin() as conn:
-            result = fn(conn)
-    except BudgetExhausted:
-        return _analyst_page(request, user, status_code=409,
-                             error="Privacy budget exhausted. No answer was released.")
-    except ValueError:
-        return _analyst_page(request, user, status_code=400,
-                             error="Invalid request.")
-    if isinstance(result, Refused):
-        return _analyst_page(request, user, label=label, kind=kind,
-                             refused=result.reason)
-    return _analyst_page(request, user, label=label, kind=kind, result=result)
-
-
 @app.get("/analyst")
 def analyst_page(request: Request, user=Depends(require_role("analyst"))):
     return _analyst_page(request, user)
-
-
-@app.post("/query/count")
-def query_count(request: Request, region: str = Form(...), csrf: str = Form(...),
-                user=Depends(require_role("analyst"))):
-    return _run_query(request, user, csrf, f"count, {region}", "count",
-                      lambda c: count_by_region(c, user.id, DATASET_ID, region))
-
-
-@app.post("/query/mean")
-def query_mean(request: Request, region: str = Form(...), csrf: str = Form(...),
-               user=Depends(require_role("analyst"))):
-    def fn(c):
-        r = mean_transfer(c, user.id, DATASET_ID, region)
-        return r if isinstance(r, Refused) else round(r, 1)
-    return _run_query(request, user, csrf, f"mean transfer, {region}", "mean", fn)
-
-
-@app.post("/query/histogram")
-def query_histogram(request: Request, csrf: str = Form(...),
-                    user=Depends(require_role("analyst"))):
-    return _run_query(request, user, csrf, "household size histogram", "histogram",
-                      lambda c: household_histogram(c, user.id, DATASET_ID))
 
 
 # ---------------- field agent routes ----------------

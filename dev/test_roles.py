@@ -1,4 +1,4 @@
-﻿import re
+import re
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -36,9 +36,9 @@ print("2. field1 login:", r.status_code, "(expect 303)")
 before = spent()
 r = client.get("/analyst")
 print("3a. GET /analyst as field_agent:", r.status_code, "(expect 403)")
-for path, data in [("/query/count", {"region": "region_8"}),
-                   ("/query/mean", {"region": "region_8"}),
-                   ("/query/histogram", {})]:
+for path, data in [("/engine/preview", {"measure": "count", "group_by": ["region"]}),
+                   ("/engine/run", {"measure": "count", "group_by": ["region"]}),
+                   ("/engine/run", {"measure": "mean", "group_by": ["region"]})]:
     r = client.post(path, data={**data, "csrf": token})
     print(f"3b. POST {path} as field_agent:", r.status_code, "(expect 403)")
 print("3c. budget unchanged by refused requests:", spent() == before, "(expect True)")

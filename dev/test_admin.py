@@ -1,4 +1,4 @@
-﻿import re
+import re
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -43,9 +43,9 @@ print("4c. anonymous GET /admin:", anon.get("/admin").status_code, "(expect 401)
 before = spent()
 atoken = csrf_from(admin.get("/admin").text)
 print("5a. admin GET /analyst:", admin.get("/analyst").status_code, "(expect 403)")
-for path, data in [("/query/count", {"region": "region_8"}),
-                   ("/query/mean", {"region": "region_8"}),
-                   ("/query/histogram", {})]:
+for path, data in [("/engine/preview", {"measure": "count", "group_by": ["region"]}),
+                   ("/engine/run", {"measure": "count", "group_by": ["region"]}),
+                   ("/engine/run", {"measure": "mean", "group_by": ["region"]})]:
     print(f"5b. admin POST {path}:",
           admin.post(path, data={**data, "csrf": atoken}).status_code, "(expect 403)")
 print("5c. admin may not submit field records:",
