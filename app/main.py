@@ -8,6 +8,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 from app.auth import COOKIE, MAX_AGE, authenticate, current_user, make_session
 from app.config import settings
+from app.ratelimit import is_locked, record_failure
 
 app = FastAPI()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -64,8 +65,13 @@ def login_page(request: Request):
 def login(request: Request, username: str = Form(...), password: str = Form(...),
           csrf: str = Form(...)):
     check_csrf(request, csrf)
+    ip = request.client.host if request.client else "unknown"
+    if is_locked(username, ip):
+        return render(request, "login.html", status_code=429,
+                      error="Too many failed attempts. Try again in a few minutes.")
     user_id = authenticate(username, password)
     if user_id is None:
+        record_failure(username, ip)
         return render(request, "login.html", status_code=401,
                       error="Invalid username or password.")
     resp = RedirectResponse("/", status_code=303)
@@ -230,3 +236,4 @@ def admin_page(request: Request, user=Depends(require_role("admin"))):
             "a.result_hash FROM audit_log a JOIN users u ON u.id = a.user_id "
             "ORDER BY a.id DESC LIMIT 50")).all()
     return render(request, "admin.html", user=user, budget=_budget(), rows=rows)
+
