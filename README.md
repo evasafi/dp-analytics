@@ -18,3 +18,10 @@ Design, threat model, evaluation, and the tested-versus-argued table are in `THR
 Dev and test scripts are in `dev/` (see `dev/README.md`).
 
 Tested from a fresh clone: steps 1, 3, 4, 5 and 6 (schema, .env, seeding, sign-in and a charged query). Step 2 (creating the `dp_app` role) was not tested, because the role already existed on the test machine.
+
+## Queries
+
+Analysts build a query on /analyst: count or mean of monthly transfer, up to two group-bys (region, household size, transfer band) and optional filters. A preview shows cost and expected error before anything is charged. A count costs 0.1 and a mean costs 0.5, however many cells; the total budget is 10.0. Results are stored, so reopening one or downloading its CSV is free. Cells with a noisy count below 30 are shown as suppressed, but shown values can still be noise.
+
+
+oise.py and queries.py are the older fixed-query code. The web app no longer uses them, but earlier tests still do.

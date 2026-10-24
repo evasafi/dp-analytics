@@ -10,14 +10,17 @@ Scenario: a cash and services assistance program. Gender-based violence caseload
 
 | Decision | Choice | Why |
 |---|---|---|
-| Query scope | Counts by region, a household-size histogram, mean transfer by region. No arbitrary SQL. | Fixed queries have known sensitivities. |
+| Query scope | A small engine: measure = count or mean of monthly transfer; up to two group-bys from region (8), household size (12) and transfer band (10); optional filters chosen from the same fixed lists; at most 150 cells per query. Column expressions come from a whitelist and values are bind parameters, so no free text reaches SQL. No arbitrary SQL. | Each query shape has a known sensitivity. |
 | Mechanism | Laplace with basic composition | One mechanism with matching accounting. |
 | Privacy unit | One record per pseudonymous ID per dataset (see limits in section 4) | Count sensitivity 1. |
 | Count sensitivity | 1 | Add/remove adjacency. |
-| Histogram | Fixed bins 1 to 12, all bins always returned, costs one query's epsilon | Each person is in exactly one bin; the set of bins present would leak. |
+| Grouped counts (histograms, cross-tabs) | Every cell is always returned, including empty ones. A person is in exactly one cell, so the cells are disjoint and the whole table costs one count query. | The set of cells present would leak. |
 | Mean | Noisy sum divided by noisy count, epsilon split evenly. Sum sensitivity is 500 (values clipped to [0, 500] in SQL). A noisy count of 1 or less is refused. | Noise is never added to the mean directly. |
 | Post-processing | Counts floored at 0 and rounded; means clipped to [0, 500] | Free post-processing, but biases small groups. |
-| Budget | Global per dataset: total 10.0, per query 0.1 (count), 0.1 (histogram), 0.5 (mean). Spend-only, never reset by the app. | Chosen from the evaluation in section 3. |
+| Budget | Global per dataset: total 10.0, per query 0.1 (count, however many cells) and 0.5 (mean). Spend-only, never reset by the app. | Chosen from the evaluation in section 3. |
+| Preview | Before charging, the analyst sees cost, cell count, typical error and budget left. These use only public facts (epsilon, noise scale, number of cells), never true group sizes. Preview spends and writes nothing. | The analyst can decide with full information. |
+| Suppression | A cell whose noisy count is below 30 is shown as suppressed. It depends only on the noisy value, so it is free post-processing. It is a usability flag, not a privacy protection: an empty cell still shows a value about 2.5% of the time. | Protection comes from the noise and the budget. |
+| Stored results | Each run stores its noisy cells in a results table (append-only for the app role) so refresh and CSV download cost nothing. Only the owning analyst can open a result (others get 404). | Noisy outputs are post-processing of an answer already charged. |
 | Atomicity | Check and spend in one transaction with a row lock (`SELECT ... FOR UPDATE`) | Concurrent requests cannot both pass the check. |
 | Refusals | A refused mean is charged and logged | Refusal depends on the noisy count, so it is not free. |
 | Order | Spend first, compute second, release last, one transaction | An answer is never released without a charge. |
@@ -92,7 +95,7 @@ Mean query, median absolute error as a percentage of the true mean (refusal rate
 
 Choice: count 0.1, histogram 0.1, mean 0.5, total 10.0. This keeps count error near 5% on the smallest region and brings mean error there to about 5%. A total of 10.0 allows 100 counts or 20 means, or a mix. Keeping the total at 5.0 would allow only about 8 means plus a few counts, which was judged too small for several analysts. This is a utility-versus-privacy decision and sits at the top of the commonly used range of 1 to 10.
 
-Notes: the mean table reports the median, and the ratio of two noisy values has heavy tails, so a typical bad draw is worse. Charging per region means a full table of eight regional counts costs 0.8, although the regions are disjoint and could be released for 0.1 in one histogram-style query. This is a possible design change that was not made.
+Notes: the mean table reports the median, and the ratio of two noisy values has heavy tails, so a typical bad draw is worse. Tables here were measured for the old fixed per-region queries. In the engine a full table of eight regional counts costs 0.1, not 0.8, because the cells are disjoint. Mean cells over many small groups (for example region by household size) are mostly suppressed.
 
 ## 4. Out of scope and known limits
 
@@ -100,6 +103,7 @@ Notes: the mean table reports the median, and the ratio of two noisy values has 
 - Person-level guarantee. The server generates a new pseudonym per submission, so nothing prevents the same real person being entered twice. The guarantee is per record, and per person only if intake deduplicates outside this system. The same person across several datasets is also not covered.
 - Auxiliary information. Attackers who know other facts about individuals are not modelled beyond what differential privacy provides.
 - Adjacency. The guarantee is for add/remove of one person. If a person's record is edited so they move between cells, two cells change, and the effective epsilon for that event is about double. Engine means are tested only through their sum and count components, not as a ratio.
+- Stored results. The results table holds noisy outputs, readable by the admin and by the database owner. They are post-processing of charged answers, so they cost no extra epsilon, but they show what analysts received. Suppression at 30 is a usability flag, not protection. Engine means are tested only through their sum and count components.
 - Floating-point Laplace sampling. General-purpose libraries have known precision-based leaks (Mironov 2012). diffprivlib documents this and it is accepted here.
 - A growing dataset. Records added after a query change what earlier queries saw. The budget is per dataset snapshot, not per lifetime of a growing dataset, and the evaluation used the seed snapshot.
 - Transport and deployment. No TLS and no `Secure` cookie flag (local http only). Behind a reverse proxy every client would share one IP for the login limit.
