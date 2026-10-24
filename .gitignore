@@ -1,10 +1,8 @@
-﻿.venv/
+.venv/
 __pycache__/
 *.pyc
 .env
 dev_reset.py
-test_refusal.py
-test_budget.py
 averaging_attack.png
 set_budget.py
 cleanup_final.py
