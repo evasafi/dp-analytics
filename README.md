@@ -17,7 +17,7 @@ Design, threat model, evaluation, and the tested-versus-argued table are in `THR
 
 Dev and test scripts are in `dev/` (see `dev/README.md`).
 
-Tested from a fresh clone: steps 1, 3, 4, 5 and 6 (schema, .env, seeding, sign-in and a charged query). Step 2 (creating the `dp_app` role) was not tested, because the role already existed on the test machine.
+Tested from a fresh clone (latest run at commit fa16031): steps 1, 3, 4, 5 and 6, including schema with the results table, seeding, accounts, the sign-in redirect to /analyst, and one charged grouped query with its stored result page. Step 2 (creating the `dp_app` role) was not tested, because the role already existed on the test machine.
 
 ## Queries
 
