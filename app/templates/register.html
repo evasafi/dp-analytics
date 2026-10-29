@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Create account{% endblock %}
+{% block content %}
+  <h3>Create an account</h3>
+  <p class="note">Anyone can register as a requester or a supporter. Verifiers, analysts and admins are created by an administrator.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/register">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>Username (3 to 30 letters, digits, . _ -) <input name="username" autocomplete="username" required></label></p>
+    <p><label>Password (12 characters or more) <input name="password" type="password" autocomplete="new-password" required></label></p>
+    <fieldset><legend>I want to</legend>
+      <label><input type="radio" name="role" value="requester" checked> ask for help (requester)</label>
+      <label><input type="radio" name="role" value="supporter"> offer help (supporter)</label>
+    </fieldset>
+    <p><button type="submit">Create account</button></p>
+  </form>
+  <p class="note">Already registered? <a href="/login">Sign in</a></p>
+{% endblock %}

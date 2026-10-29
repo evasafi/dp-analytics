@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Post a need{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/mine">My needs</a></p>
+  <h3>Post a need</h3>
+  <p class="note">A verifier reviews every need before anything is public. Your description and contact details are seen only by verifiers. The public board will show a short text the verifier approves, with your district and no name.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/needs/new">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>Category <select name="category">{% for key, label in categories %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label></p>
+    <p><label>Province <input name="province" maxlength="40" required></label>
+       <label>District <input name="district" maxlength="40" required></label></p>
+    <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" maxlength="1000" required></textarea></label></p>
+    <p><label>How a verifier can reach you (3 to 200 characters) <input name="contact" maxlength="200" required></label></p>
+    <p><button type="submit">Submit for review</button></p>
+  </form>
+  <hr>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+{% endblock %}

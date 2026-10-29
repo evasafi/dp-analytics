@@ -53,7 +53,7 @@ def root(request: Request):
         user = current_user(request)
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
-    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin"}
+    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin", "requester": "/needs/mine"}
     return RedirectResponse(home.get(user.role, "/me"), status_code=303)
 
 
@@ -335,3 +335,94 @@ def engine_results(request: Request, user=Depends(require_role("analyst"))):
 
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+
+# ---------------- requesters and supporters ----------------
+import re as _re
+
+from app.auth import hash_password
+from app.ratelimit import record_registration, registration_blocked
+
+SELF_ROLES = ("requester", "supporter")
+USERNAME_RE = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,29}$")
+CATEGORIES = [("baby_child", "Baby and child"), ("education", "Education"),
+              ("household", "Household goods"), ("electronics", "Electronics"),
+              ("clothing", "Clothing"), ("culture_art", "Culture and art"),
+              ("health", "Health"), ("street_animals", "Street animals"),
+              ("sports", "Sports"), ("hygiene", "Cleaning and hygiene")]
+MAX_PENDING = 3
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+@app.get("/register")
+def register_page(request: Request):
+    return render(request, "register.html")
+
+
+@app.post("/register")
+def register(request: Request, username: str = Form(...), password: str = Form(...),
+             role: str = Form(...), csrf: str = Form(...)):
+    check_csrf(request, csrf)
+    if registration_blocked(_client_ip(request)):
+        return render(request, "register.html", status_code=429,
+                      error="Too many accounts created from this address. Try again later.")
+    if role not in SELF_ROLES or not USERNAME_RE.match(username) or not 12 <= len(password) <= 200:
+        return render(request, "register.html", status_code=400,
+                      error="Check the username (3 to 30 characters) and the password (12 or more).")
+    try:
+        with engine.begin() as conn:
+            uid = conn.execute(
+                text("INSERT INTO users (username, password_hash, role) VALUES (:u, :h, :r) RETURNING id"),
+                {"u": username, "h": hash_password(password), "r": role}).scalar_one()
+    except IntegrityError:
+        return render(request, "register.html", status_code=400,
+                      error="That username is not available.")
+    record_registration(_client_ip(request))
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(COOKIE, make_session(uid), max_age=MAX_AGE, httponly=True, samesite="strict")
+    return resp
+
+
+@app.get("/needs/new")
+def need_new_page(request: Request, user=Depends(require_role("requester"))):
+    return render(request, "need_new.html", user=user, categories=CATEGORIES)
+
+
+@app.post("/needs/new")
+def need_new(request: Request, category: str = Form(...), province: str = Form(...),
+             district: str = Form(...), description: str = Form(...), contact: str = Form(...),
+             csrf: str = Form(...), user=Depends(require_role("requester"))):
+    check_csrf(request, csrf)
+    province, district = province.strip(), district.strip()
+    description, contact = description.strip(), contact.strip()
+    ok = (category in dict(CATEGORIES) and 2 <= len(province) <= 40 and 2 <= len(district) <= 40
+          and 10 <= len(description) <= 1000 and 3 <= len(contact) <= 200)
+    if not ok:
+        return render(request, "need_new.html", status_code=400, user=user, categories=CATEGORIES,
+                      error="Check the fields. Nothing was saved.")
+    with engine.begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 8000000 + user.id})
+        pending = conn.execute(
+            text("SELECT count(*) FROM needs WHERE requester_id = :u AND status = 'pending'"),
+            {"u": user.id}).scalar_one()
+        if pending >= MAX_PENDING:
+            return render(request, "need_new.html", status_code=429, user=user, categories=CATEGORIES,
+                          error=f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.")
+        nid = conn.execute(
+            text("INSERT INTO needs (requester_id, category, province, district, description, contact) "
+                 "VALUES (:u, :c, :p, :d, :t, :k) RETURNING id"),
+            {"u": user.id, "c": category, "p": province, "d": district, "t": description, "k": contact}).scalar_one()
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :u, 'submitted')"),
+                     {"n": nid, "u": user.id})
+    return RedirectResponse("/needs/mine?done=1", status_code=303)
+
+
+@app.get("/needs/mine")
+def needs_mine(request: Request, done: int = 0, user=Depends(require_role("requester"))):
+    with engine.connect() as c:
+        rows = c.execute(
+            text("SELECT created_at, category, province, district, status, description, review_note "
+                 "FROM needs WHERE requester_id = :u ORDER BY id DESC"), {"u": user.id}).all()
+    return render(request, "needs_mine.html", user=user, rows=rows, done=bool(done))
