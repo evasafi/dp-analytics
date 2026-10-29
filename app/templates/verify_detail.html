@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Review need{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/verify">Back to the queue</a></p>
+  <h3>Need {{ n.id }}: {{ label }}</h3>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <table>
+    <tr><th>Place</th><td>{{ n.district }}, {{ n.province }}</td></tr>
+    <tr><th>Posted</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+    <tr><th>Status</th><td>{{ n.status }}</td></tr>
+    <tr><th>Description (private)</th><td>{{ n.description }}</td></tr>
+    <tr><th>Contact (private)</th><td>{{ n.contact }}</td></tr>
+  </table>
+  {% if n.status == "pending" %}
+  <h3>Approve</h3>
+  <p class="note">Write what the public board will show. Do not include names, phone numbers, addresses, links or the contact details above. Text that looks like contact details is refused.</p>
+  <form method="post" action="/verify/{{ n.id }}/approve">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><textarea name="public_text" rows="4" cols="60" maxlength="300" required>{{ draft }}</textarea></p>
+    <p><button type="submit">Approve and publish</button></p>
+  </form>
+  <h3>Reject</h3>
+  <form method="post" action="/verify/{{ n.id }}/reject">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><textarea name="note" rows="3" cols="60" maxlength="500" placeholder="Why? The requester will see this." required></textarea></p>
+    <p><button type="submit">Reject</button></p>
+  </form>
+  {% else %}
+  <p>This need has already been decided, so there is nothing to do here.</p>
+  {% endif %}
+{% endblock %}

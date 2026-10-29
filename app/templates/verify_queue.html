@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Review queue{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier).</p>
+  {% if done == "approved" %}<p><strong>Approved and published.</strong></p>{% endif %}
+  {% if done == "rejected" %}<p><strong>Rejected. The requester will see your note.</strong></p>{% endif %}
+  <h3>Needs waiting for review</h3>
+  {% if not rows %}<p>Nothing is waiting.</p>{% else %}
+  <table>
+    <tr><th>Posted</th><th>Category</th><th>Place</th><th>Start of the description</th><th></th></tr>
+    {% for r in rows %}
+    <tr><td>{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ labels[r.category] }}</td>
+        <td>{{ r.district }}, {{ r.province }}</td><td>{{ r.snippet }}</td>
+        <td><a href="/verify/{{ r.id }}">review</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <hr>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+{% endblock %}
