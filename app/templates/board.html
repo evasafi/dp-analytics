@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Needs board{% endblock %}
+{% block content %}
+  <p><a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>
+  <h3>Needs board</h3>
+  <p class="note">Every need here was reviewed by a verifier before it appeared. To offer help, create a supporter account. Contact between people goes through the verifier.</p>
+  <form method="get" action="/board">
+    <label>Category <select name="category"><option value="">All</option>
+      {% for key, label in categories %}<option value="{{ key }}" {% if key == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+    <label>Province <select name="province"><option value="">All</option>
+      {% for code, name, lat, lon in provinces %}<option value="{{ name }}" {% if name == province %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select></label>
+    <button type="submit">Filter</button> <a href="/board">Clear</a>
+  </form>
+  <div id="map" data-category="{{ category }}" data-province="{{ province }}"><noscript>The map needs JavaScript. Use the filters.</noscript></div>
+  <p class="note">The map counts open needs per province. Boundaries: General Command of Mapping, Türkiye, via OCHA/HDX (CC BY-IGO).</p>
+  <h3>{{ total }} open need{{ "" if total == 1 else "s" }}</h3>
+  {% if not rows %}<p>No needs match.</p>{% else %}
+  <table>
+    <tr><th>Posted</th><th>Category</th><th>Place</th><th>What is needed</th></tr>
+    {% for r in rows %}
+    <tr><td>{{ r.month }}</td><td>{{ labels[r.category] }}</td><td>{{ r.district }}, {{ r.province }}</td><td>{{ r.public_text }}</td></tr>
+    {% endfor %}
+  </table>
+  <p>{% if prev_url %}<a href="{{ prev_url }}">Newer</a>{% endif %} {% if next_url %}<a href="{{ next_url }}">Older</a>{% endif %}</p>
+  {% endif %}
+  <script>
+    (function () {
+      var box = document.getElementById('map');
+      if (!box) return;
+      var cat = box.getAttribute('data-category') || '';
+      var sel = box.getAttribute('data-province') || '';
+      var NS = 'http://www.w3.org/2000/svg';
+      var dataUrl = '/board/map-data' + (cat ? '?category=' + encodeURIComponent(cat) : '');
+      function get(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url); return r.json(); }); }
+      Promise.all([get(dataUrl), get('/static/geo/turkey_provinces.min.geojson')])
+        .then(function (res) { draw(res[0], res[1]); })
+        .catch(function () { box.textContent = 'The map is not available. Use the filters below.'; });
+      function go(name) {
+        var u = '/board?province=' + encodeURIComponent(name);
+        if (cat) u += '&category=' + encodeURIComponent(cat);
+        window.location.href = u;
+      }
+      function draw(counts, geo) {
+        var byName = {};
+        counts.forEach(function (c) { byName[c.name] = c; });
+        var minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+        geo.features.forEach(function (f) {
+          f.geometry.coordinates.forEach(function (poly) {
+            poly.forEach(function (ring) {
+              ring.forEach(function (p) {
+                if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+                if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+              });
+            });
+          });
+        });
+        var cosLat = Math.cos(39 * Math.PI / 180);
+        var k = 900 / ((maxx - minx) * cosLat);
+        function px(lon) { return ((lon - minx) * cosLat * k).toFixed(1); }
+        function py(lat) { return ((maxy - lat) * k).toFixed(1); }
+        var svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 900 ' + Math.ceil((maxy - miny) * k));
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'Map of open needs by province');
+        svg.setAttribute('style', 'width:100%;height:auto;max-width:900px');
+        geo.features.forEach(function (f) {
+          var name = f.properties.name;
+          var c = byName[name] ? byName[name].count : 0;
+          var d = '';
+          f.geometry.coordinates.forEach(function (poly) {
+            poly.forEach(function (ring) {
+              d += 'M' + ring.map(function (p) { return px(p[0]) + ' ' + py(p[1]); }).join('L') + 'Z';
+            });
+          });
+          var path = document.createElementNS(NS, 'path');
+          path.setAttribute('d', d);
+          path.setAttribute('fill', name === sel ? '#cfe3ff' : '#f0f3f6');
+          path.setAttribute('stroke', '#8a94a0');
+          path.setAttribute('stroke-width', '0.6');
+          path.setAttribute('style', 'cursor:pointer');
+          var t = document.createElementNS(NS, 'title');
+          t.textContent = name + ': ' + c + ' open need' + (c === 1 ? '' : 's');
+          path.appendChild(t);
+          path.addEventListener('click', function () { go(name); });
+          svg.appendChild(path);
+        });
+        counts.forEach(function (c) {
+          if (!c.count) return;
+          var circle = document.createElementNS(NS, 'circle');
+          circle.setAttribute('cx', px(c.lon));
+          circle.setAttribute('cy', py(c.lat));
+          circle.setAttribute('r', (4 + 3 * Math.sqrt(c.count)).toFixed(1));
+          circle.setAttribute('fill', '#1f6feb');
+          circle.setAttribute('fill-opacity', '0.6');
+          circle.setAttribute('style', 'cursor:pointer');
+          var t = document.createElementNS(NS, 'title');
+          t.textContent = c.name + ': ' + c.count + ' open need' + (c.count === 1 ? '' : 's');
+          circle.appendChild(t);
+          circle.addEventListener('click', function () { go(c.name); });
+          svg.appendChild(circle);
+        });
+        box.textContent = '';
+        box.appendChild(svg);
+      }
+    })();
+  </script>
+{% endblock %}

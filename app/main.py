@@ -523,3 +523,93 @@ def verify_reject(request: Request, nid: int, note: str = Form(...), csrf: str =
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'rejected', :r)"),
                      {"n": nid, "a": user.id, "r": note})
     return RedirectResponse("/verify?done=rejected", status_code=303)
+
+# ---------------- public board ----------------
+import threading
+import time
+from collections import deque
+from urllib.parse import urlencode
+
+from fastapi import Query
+from fastapi.responses import JSONResponse
+
+PAGE_SIZE = 20
+BOARD_LIMIT, BOARD_WINDOW = 60, 60  # requests per window (seconds), per address, in memory
+_RATE: dict = {}
+_RATE_LOCK = threading.Lock()
+
+
+def _board_rate_ok(ip: str) -> bool:
+    now = time.monotonic()
+    with _RATE_LOCK:
+        if len(_RATE) > 5000:
+            for k in [k for k, d in _RATE.items() if not d or now - d[-1] > BOARD_WINDOW]:
+                del _RATE[k]
+        d = _RATE.setdefault(ip, deque())
+        while d and now - d[0] > BOARD_WINDOW:
+            d.popleft()
+        if len(d) >= BOARD_LIMIT:
+            return False
+        d.append(now)
+        return True
+
+
+def _too_many():
+    return Response("Too many requests. Try again in a minute.", status_code=429, media_type="text/plain")
+
+
+def _bad_filter(category: str, province: str) -> bool:
+    return (bool(category) and category not in dict(CATEGORIES)) or (bool(province) and province not in PROVINCE_NAMES)
+
+
+@app.get("/board")
+def board(request: Request, category: str = "", province: str = "",
+          page: int = Query(1, ge=1, le=1000)):
+    if not _board_rate_ok(_client_ip(request)):
+        return _too_many()
+    if _bad_filter(category, province):
+        return Response("Unknown filter.", status_code=400, media_type="text/plain")
+    where, params = "status = 'published'", {}
+    if category:
+        where += " AND category = :c"
+        params["c"] = category
+    if province:
+        where += " AND province = :p"
+        params["p"] = province
+    with engine.connect() as c:
+        total = c.execute(text(f"SELECT count(*) FROM needs WHERE {where}"), params).scalar_one()
+        rows = c.execute(
+            text("SELECT category, province, district, public_text, to_char(created_at, 'YYYY-MM') AS month "
+                 f"FROM needs WHERE {where} ORDER BY id DESC LIMIT :lim OFFSET :off"),
+            {**params, "lim": PAGE_SIZE, "off": (page - 1) * PAGE_SIZE}).all()
+
+    def link(n):
+        q = {k: v for k, v in (("category", category), ("province", province)) if v}
+        if n > 1:
+            q["page"] = n
+        return "/board" + ("?" + urlencode(q) if q else "")
+
+    return templates.TemplateResponse(request, "board.html", {
+        "rows": rows, "total": total, "category": category, "province": province,
+        "categories": CATEGORIES, "provinces": PROVINCES, "labels": dict(CATEGORIES),
+        "prev_url": link(page - 1) if page > 1 else None,
+        "next_url": link(page + 1) if page * PAGE_SIZE < total else None})
+
+
+@app.get("/board/map-data")
+def board_map_data(request: Request, category: str = ""):
+    if not _board_rate_ok(_client_ip(request)):
+        return _too_many()
+    if _bad_filter(category, ""):
+        return Response("Unknown filter.", status_code=400, media_type="text/plain")
+    sql = "SELECT province, count(*) FROM needs WHERE status = 'published'"
+    params = {}
+    if category:
+        sql += " AND category = :c"
+        params["c"] = category
+    sql += " GROUP BY province"
+    with engine.connect() as c:
+        counts = dict(c.execute(text(sql), params).all())
+    data = [{"name": n, "pcode": code, "lat": la, "lon": lo, "count": int(counts.get(n, 0))}
+            for code, n, la, lo in PROVINCES]
+    return JSONResponse(data, headers={"Cache-Control": "public, max-age=60"})
