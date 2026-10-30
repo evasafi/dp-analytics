@@ -71,6 +71,30 @@ Goal: use the admin role to read data or hide activity.
 - Residual risk: the admin sees what analysts asked about. Accounts are created by a seed script that needs database credentials, because there is no account management page.
 - The database owner (`postgres`) is outside the app's controls. The owner can read every row, alter the audit log, and reset the budget. Append-only is enforced against the app role only.
 
+### 2.6 Matching side: actors and what each can see
+
+AidBridge has two halves that share one application but not their data. The matching side holds the `needs`, `pledges` and `need_events` tables. The analytics side holds the synthetic beneficiary dataset, its privacy budget and its audit log. No query connects the two yet.
+
+| Actor | Can see | Cannot see |
+|---|---|---|
+| Anyone, no account | Published needs: the month posted, category, province, district and the verifier's text. The number of published needs per province on the map. | Pending, rejected, pledged and fulfilled needs. Private descriptions, contact details, and who posted a need. |
+| Requester | Their own needs: category, place, status, description and any rejection note. | Other requesters' needs. Their own contact detail is not shown back to them. |
+| Supporter | The public board. Supporter pages do not exist yet. | Everything else. |
+| Verifier | Every need in full: private description, contact method and contact detail, place and time. Writes the public text and decides. | The analytics data. |
+| Analyst | Noisy aggregates of the synthetic dataset. | Individual records, and any needs. |
+| Admin | The audit log of the analytics side (who asked what, with parameters and result hashes) and its budget. | Needs, results and contact details, through the application. |
+| Field agent | Nothing read back. Adds records to the synthetic dataset. | Everything. |
+| Database owner | Everything, including contact details in plain text. Can alter the logs. | Nothing. |
+
+Trust assumptions:
+
+- The verifier is trusted with every private detail and with writing the public text. The checks on a verifier are the event recorded for each decision and a guard that refuses obvious contact details in the public text. Nothing checks a verifier's judgement about what a description might reveal.
+- The database owner is outside every control in this document, as in section 2.5.
+- The public board is public by design. Its protection is that only reviewed text, a coarse place and a month are shown, and that only published needs ever appear.
+
+Rule for public pages: they show published needs, or counts of them, and nothing else. The map counts are counts of listings that are already public, so they are not differentially private and are not meant to be. Counts of pending, rejected or fulfilled needs are statistics over private data, and belong on the analytics side behind differential privacy once that exists.
+
+Every submission and every verifier decision writes an event (who, when, and the note for a rejection). The event table is append-only for the application, but no page shows it yet, so reviewing a verifier's decisions currently needs database access.
 ## 3. Evaluation
 
 Run on the 5,000-row seed snapshot (fixed seed 2026), 1,000 trials per cell, through the real `noise.py` functions without touching the budget. Source: `eval_accuracy.py`, output in `eval_accuracy.csv` and `eval_accuracy.png`.
