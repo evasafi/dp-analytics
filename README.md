@@ -15,7 +15,7 @@ No money moves through the platform. It connects people, and any handover happen
 
 ## Status
 
-Built and tested:
+Built. Everything below has script tests except the map drawing and the form dropdowns, which were checked by eye or not yet checked (see section 5 of `THREAT_MODEL.md`):
 
 - Sign-up for requesters and supporters, with sign-in, CSRF tokens, login lockout and a sign-up throttle.
 - Posting a need, with fixed province and district lists (validated as a pair) and a contact method with format checks. At most 3 pending needs per requester.
@@ -56,7 +56,7 @@ Not built:
    - `python seed.py`
    - `python seed_users.py` prompts for three passwords (12+ characters each): field1, analyst1, admin1
    - `python seed_verifier.py` prompts for a verifier username and password
-6. Optional, for the map outlines: see "Boundary data" below. Without the file the board still works and the map says it is unavailable.
+6. Optional, for the map outlines: see "Boundary data" below. Without the file the board is meant to keep working and the map to say it is unavailable; this has not been checked yet.
 7. Run: `uvicorn app.main:app --reload`, then type `127.0.0.1:8000/board` or `127.0.0.1:8000/login` into the browser. Do not follow a link into the app, because the session cookie is SameSite=Strict.
 
 The last full run from a fresh clone was at commit `fa16031` and covered only the analytics path. The needs-matching side, verifier seeding, the boundary file and step 2 (creating the `dp_app` role, which already existed on the test machine) have not been tested from a clean clone.
@@ -65,7 +65,7 @@ The last full run from a fresh clone was at commit `fa16031` and covered only th
 
 `app/provinces.py` and `app/districts.py` hold the 81 provinces and 973 districts, as plain ASCII names and codes. They were generated from the OCHA COD-AB Türkiye dataset on the Humanitarian Data Exchange (`data.humdata.org/dataset/cod-ab-tur`), licence CC BY-IGO, source: General Command of Mapping, Türkiye, via OCHA/HDX.
 
-The map outlines (`app/static/geo/turkey_provinces.min.geojson`) are not committed, because the dataset's methodology says it was shared "for humanitarian use only" and I have not confirmed that this use is covered. To rebuild them:
+The map outlines (`app/static/geo/turkey_provinces.min.geojson`) are not committed, because the dataset's methodology says it was shared "for humanitarian use only" and it has not been confirmed that this use is covered. To rebuild them:
 
 1. Download the GeoJSON zip from the dataset page and unzip it. You need `tur_admin1.geojson` (provinces) and, for the district list, `tur_admin2.geojson`.
 2. From the project root: `python tools/simplify_geo.py <path to tur_admin1.geojson> app/static/geo/turkey_provinces.min.geojson`
