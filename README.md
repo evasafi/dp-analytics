@@ -56,7 +56,7 @@ Not built:
    - `python seed.py`
    - `python seed_users.py` prompts for three passwords (12+ characters each): field1, analyst1, admin1
    - `python seed_verifier.py` prompts for a verifier username and password
-6. Optional, for the map outlines: see "Boundary data" below. Without the file the board is meant to keep working and the map to say it is unavailable; this has not been checked yet.
+6. Optional, for the map outlines: see "Boundary data" below. Without the file the board keeps working and the map area says it is unavailable (checked in a browser).
 7. Run: `uvicorn app.main:app --reload`, then type `127.0.0.1:8000/board` or `127.0.0.1:8000/login` into the browser. Do not follow a link into the app, because the session cookie is SameSite=Strict.
 
 The last full run from a fresh clone was at commit `fa16031` and covered only the analytics path. The needs-matching side, verifier seeding, the boundary file and step 2 (creating the `dp_app` role, which already existed on the test machine) have not been tested from a clean clone.
