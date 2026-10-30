@@ -399,19 +399,19 @@ def need_new(request: Request, category: str = Form(...), province: str = Form(.
     check_csrf(request, csrf)
     province, district = province.strip(), district.strip()
     description, contact = description.strip(), contact.strip()
-    ok = (category in dict(CATEGORIES) and province in PROVINCE_NAMES and district in DISTRICTS_BY_PROVINCE.get(province, ())
-          and 10 <= len(description) <= 1000 and _contact_ok(contact_method, contact))
-    if not ok:
-        return render(request, "need_new.html", status_code=400, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
-                      error="Check the fields. Nothing was saved.")
+    form = {"category": category, "province": province, "district": district,
+            "description": description, "contact_method": contact_method, "contact": contact}
+    problem = _need_problem(category, province, district, description, contact_method, contact)
+    if problem:
+        return _need_page(request, user, 400, problem, form)
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 8000000 + user.id})
         pending = conn.execute(
             text("SELECT count(*) FROM needs WHERE requester_id = :u AND status = 'pending'"),
             {"u": user.id}).scalar_one()
         if pending >= MAX_PENDING:
-            return render(request, "need_new.html", status_code=429, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
-                          error=f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.")
+            return _need_page(request, user, 429,
+                              f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.", form)
         nid = conn.execute(
             text("INSERT INTO needs (requester_id, category, province, district, description, contact, contact_method) "
                  "VALUES (:u, :c, :p, :d, :t, :k, :m) RETURNING id"),
@@ -705,8 +705,10 @@ def pledge(request: Request, nid: int, contact_method: str = Form(...), contact:
     if n is None:
         raise HTTPException(status_code=404, detail="not found")
     contact = contact.strip()
-    if not _contact_ok(contact_method, contact):
-        return _pledge_page(request, user, n, status_code=400, error="Check your contact details. Nothing was saved.")
+    problem = _contact_problem(contact_method, contact)
+    if problem:
+        return _pledge_page_form(request, user, n, 400, problem + " Nothing was saved.",
+                                 {"contact_method": contact_method, "contact": contact})
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 9000000 + user.id})
         active = conn.execute(
@@ -838,3 +840,38 @@ def handover_release(request: Request, pid: int, note: str = Form(...), csrf: st
     except _HandoverConflict:
         return _handover_conflict(request, user, pid)
     return RedirectResponse("/handovers?done=released", status_code=303)
+
+# ---------------- form errors that keep what was typed ----------------
+def _contact_problem(method: str, contact: str):
+    if _contact_ok(method, contact):
+        return None
+    if method == "email":
+        return "That does not look like an email address, for example name@example.com."
+    if method in ("phone", "whatsapp"):
+        return ("A phone or WhatsApp number must have 7 to 15 digits, and may contain only digits, spaces, "
+                "brackets, dots and dashes, with an optional leading +. Use Other for anything else.")
+    if method == "other":
+        return "Write 3 to 200 characters on how a verifier can reach you."
+    return "Choose how a verifier can reach you."
+
+
+def _need_problem(category, province, district, description, contact_method, contact):
+    if category not in dict(CATEGORIES):
+        return "Choose a category."
+    if province not in PROVINCE_NAMES:
+        return "Choose a province from the list."
+    if district not in DISTRICTS_BY_PROVINCE.get(province, ()):
+        return "Choose a district that belongs to the province."
+    if not 10 <= len(description) <= 1000:
+        return "The description must be 10 to 1000 characters (it is %d)." % len(description)
+    return _contact_problem(contact_method, contact)
+
+
+def _need_page(request, user, status_code, error, form):
+    return render(request, "need_new.html", status_code=status_code, user=user, categories=CATEGORIES,
+                  provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE, error=error, form=form)
+
+
+def _pledge_page_form(request, user, n, status_code, error, form):
+    return render(request, "pledge_form.html", status_code=status_code, user=user, n=n,
+                  label=dict(CATEGORIES)[n.category], error=error, form=form)

@@ -1,24 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Post a need{% endblock %}
 {% block content %}
+  {% set f = form or {} %}
+  {% set sel_prov = f.get('province') if f.get('province') in districts_by_province else provinces[0][1] %}
+  {% set sel_dist = f.get('district') or '' %}
   <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/mine">My needs</a></p>
   <h3>Post a need</h3>
   <p class="note">A verifier reviews every need before anything is public. Your description and contact details are seen only by verifiers. The public board will show a short text the verifier approves, with your district and no name.</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post" action="/needs/new">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p><label>Category <select name="category">{% for key, label in categories %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label></p>
-    <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option>{{ name }}</option>{% endfor %}</select></label>
-       <label>District <select name="district" id="district">{% for d in districts_by_province[provinces[0][1]] %}<option>{{ d }}</option>{% endfor %}</select></label></p>
-    <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" maxlength="1000" required></textarea></label></p>
+    <p><label>Category <select name="category">{% for key, label in categories %}<option value="{{ key }}"{% if f.get('category') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></p>
+    <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option value="{{ name }}"{% if name == sel_prov %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+       <label>District <select name="district" id="district">{% for d in districts_by_province[sel_prov] %}<option value="{{ d }}"{% if d == sel_dist %} selected{% endif %}>{{ d }}</option>{% endfor %}</select></label></p>
+    <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" minlength="10" maxlength="1000" required>{{ f.get('description', '') }}</textarea></label></p>
     <p><label>How a verifier can reach you
       <select name="contact_method" id="contact_method">
-        <option value="phone">Phone number</option>
-        <option value="email">Email address</option>
-        <option value="whatsapp">WhatsApp number</option>
-        <option value="other">Other</option>
+        <option value="phone"{% if f.get('contact_method') == 'phone' %} selected{% endif %}>Phone number</option>
+        <option value="email"{% if f.get('contact_method') == 'email' %} selected{% endif %}>Email address</option>
+        <option value="whatsapp"{% if f.get('contact_method') == 'whatsapp' %} selected{% endif %}>WhatsApp number</option>
+        <option value="other"{% if f.get('contact_method') == 'other' %} selected{% endif %}>Other</option>
       </select></label>
-    <label><input name="contact" id="contact" maxlength="200" required></label></p>
+    <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
     <p><button type="submit">Submit for review</button></p>
   </form>
   <hr>
@@ -28,10 +31,17 @@
     (function () {
       var data = JSON.parse(document.getElementById('districts-data').textContent);
       var prov = document.getElementById('province'), dist = document.getElementById('district');
+      var keep = {{ sel_dist|tojson }}, first = true;
       function fill() {
         var list = data[prov.value] || [];
         dist.innerHTML = '';
-        list.forEach(function (n) { var o = document.createElement('option'); o.value = n; o.textContent = n; dist.appendChild(o); });
+        list.forEach(function (n) {
+          var o = document.createElement('option');
+          o.value = n; o.textContent = n;
+          if (first && n === keep) o.selected = true;
+          dist.appendChild(o);
+        });
+        first = false;
       }
       prov.addEventListener('change', fill);
       fill();

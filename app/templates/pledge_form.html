@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Pledge{% endblock %}
 {% block content %}
+  {% set f = form or {} %}
   <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/support">Back</a></p>
   <h3>Pledge to this need</h3>
   <table>
@@ -15,12 +16,12 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <p><label>How a verifier can reach you
       <select name="contact_method" id="contact_method">
-        <option value="phone">Phone number</option>
-        <option value="email">Email address</option>
-        <option value="whatsapp">WhatsApp number</option>
-        <option value="other">Other</option>
+        <option value="phone"{% if f.get('contact_method') == 'phone' %} selected{% endif %}>Phone number</option>
+        <option value="email"{% if f.get('contact_method') == 'email' %} selected{% endif %}>Email address</option>
+        <option value="whatsapp"{% if f.get('contact_method') == 'whatsapp' %} selected{% endif %}>WhatsApp number</option>
+        <option value="other"{% if f.get('contact_method') == 'other' %} selected{% endif %}>Other</option>
       </select></label>
-      <label><input name="contact" id="contact" maxlength="200" required></label></p>
+      <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
     <p><button type="submit">Pledge to help</button></p>
   </form>
   <script>
