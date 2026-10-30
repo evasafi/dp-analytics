@@ -705,7 +705,7 @@ def pledge(request: Request, nid: int, contact_method: str = Form(...), contact:
     if n is None:
         raise HTTPException(status_code=404, detail="not found")
     contact = contact.strip()
-if not _contact_ok(contact_method, contact):
+    if not _contact_ok(contact_method, contact):
         return _pledge_page(request, user, n, status_code=400, error="Check your contact details. Nothing was saved.")
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 9000000 + user.id})
