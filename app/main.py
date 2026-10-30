@@ -350,6 +350,7 @@ CATEGORIES = [("baby_child", "Baby and child"), ("education", "Education"),
               ("health", "Health"), ("street_animals", "Street animals"),
               ("sports", "Sports"), ("hygiene", "Cleaning and hygiene")]
 MAX_PENDING = 3
+from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCE_NAMES, PROVINCES
 
 
@@ -388,7 +389,7 @@ def register(request: Request, username: str = Form(...), password: str = Form(.
 
 @app.get("/needs/new")
 def need_new_page(request: Request, user=Depends(require_role("requester"))):
-    return render(request, "need_new.html", user=user, categories=CATEGORIES, provinces=PROVINCES)
+    return render(request, "need_new.html", user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE)
 
 
 @app.post("/needs/new")
@@ -398,10 +399,10 @@ def need_new(request: Request, category: str = Form(...), province: str = Form(.
     check_csrf(request, csrf)
     province, district = province.strip(), district.strip()
     description, contact = description.strip(), contact.strip()
-    ok = (category in dict(CATEGORIES) and province in PROVINCE_NAMES and 2 <= len(district) <= 40
+    ok = (category in dict(CATEGORIES) and province in PROVINCE_NAMES and district in DISTRICTS_BY_PROVINCE.get(province, ())
           and 10 <= len(description) <= 1000 and 3 <= len(contact) <= 200)
     if not ok:
-        return render(request, "need_new.html", status_code=400, user=user, categories=CATEGORIES, provinces=PROVINCES,
+        return render(request, "need_new.html", status_code=400, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
                       error="Check the fields. Nothing was saved.")
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 8000000 + user.id})
@@ -409,7 +410,7 @@ def need_new(request: Request, category: str = Form(...), province: str = Form(.
             text("SELECT count(*) FROM needs WHERE requester_id = :u AND status = 'pending'"),
             {"u": user.id}).scalar_one()
         if pending >= MAX_PENDING:
-            return render(request, "need_new.html", status_code=429, user=user, categories=CATEGORIES, provinces=PROVINCES,
+            return render(request, "need_new.html", status_code=429, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
                           error=f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.")
         nid = conn.execute(
             text("INSERT INTO needs (requester_id, category, province, district, description, contact) "

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.main import app
+from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCES
 
 owner = getpass.getpass("postgres password: ")
@@ -48,7 +49,7 @@ try:
 
     def post(province):
         t = re.search(r'name="csrf" value="([^"]+)"', cl.get("/needs/new").text).group(1)
-        return cl.post("/needs/new", data={"category": "health", "province": province, "district": "Uskudar",
+        return cl.post("/needs/new", data={"category": "health", "province": province, "district": DISTRICTS_BY_PROVINCE.get(province.strip(), ["Uskudar"])[0],
                                            "description": "needs a wheelchair for a family member", "contact": "via verifier",
                                            "csrf": t}, follow_redirects=False).status_code
 

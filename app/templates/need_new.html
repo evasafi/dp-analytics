@@ -8,12 +8,26 @@
   <form method="post" action="/needs/new">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <p><label>Category <select name="category">{% for key, label in categories %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label></p>
-    <p><label>Province <select name="province">{% for code, name, lat, lon in provinces %}<option>{{ name }}</option>{% endfor %}</select></label>
-       <label>District <input name="district" maxlength="40" required></label></p>
+    <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option>{{ name }}</option>{% endfor %}</select></label>
+       <label>District <select name="district" id="district">{% for d in districts_by_province[provinces[0][1]] %}<option>{{ d }}</option>{% endfor %}</select></label></p>
     <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" maxlength="1000" required></textarea></label></p>
     <p><label>How a verifier can reach you (3 to 200 characters) <input name="contact" maxlength="200" required></label></p>
     <p><button type="submit">Submit for review</button></p>
   </form>
   <hr>
   <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+  <script type="application/json" id="districts-data">{{ districts_by_province|tojson }}</script>
+  <script>
+    (function () {
+      var data = JSON.parse(document.getElementById('districts-data').textContent);
+      var prov = document.getElementById('province'), dist = document.getElementById('district');
+      function fill() {
+        var list = data[prov.value] || [];
+        dist.innerHTML = '';
+        list.forEach(function (n) { var o = document.createElement('option'); o.value = n; o.textContent = n; dist.appendChild(o); });
+      }
+      prov.addEventListener('change', fill);
+      fill();
+    })();
+  </script>
 {% endblock %}
