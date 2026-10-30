@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Pledge{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/support">Back</a></p>
+  <h3>Pledge to this need</h3>
+  <table>
+    <tr><th>Category</th><td>{{ label }}</td></tr>
+    <tr><th>Place</th><td>{{ n.district }}, {{ n.province }}</td></tr>
+    <tr><th>Posted</th><td>{{ n.month }}</td></tr>
+    <tr><th>What is needed</th><td>{{ n.public_text }}</td></tr>
+  </table>
+  <p class="note">A verifier arranges the handover, so the requester never sees your details and you never see theirs. Your contact is shown only to verifiers. No money moves through AidBridge.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/support/pledge/{{ n.id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>How a verifier can reach you
+      <select name="contact_method" id="contact_method">
+        <option value="phone">Phone number</option>
+        <option value="email">Email address</option>
+        <option value="whatsapp">WhatsApp number</option>
+        <option value="other">Other</option>
+      </select></label>
+      <label><input name="contact" id="contact" maxlength="200" required></label></p>
+    <p><button type="submit">Pledge to help</button></p>
+  </form>
+  <script>
+    (function () {
+      var sel = document.getElementById('contact_method'), box = document.getElementById('contact');
+      var hints = {phone: ['tel', '+90 5xx xxx xx xx'], email: ['email', 'name@example.com'],
+                   whatsapp: ['tel', '+90 5xx xxx xx xx'], other: ['text', 'Say how a verifier can reach you']};
+      function update() { var h = hints[sel.value]; box.type = h[0]; box.placeholder = h[1]; }
+      sel.addEventListener('change', update);
+      update();
+    })();
+  </script>
+{% endblock %}

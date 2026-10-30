@@ -53,7 +53,7 @@ def root(request: Request):
         user = current_user(request)
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
-    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin", "requester": "/needs/mine", "verifier": "/verify"}
+    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin", "requester": "/needs/mine", "verifier": "/verify", "supporter": "/support"}
     return RedirectResponse(home.get(user.role, "/me"), status_code=303)
 
 
@@ -629,3 +629,120 @@ def _contact_ok(method: str, contact: str) -> bool:
         digits = sum(ch.isdigit() and ch.isascii() for ch in contact)
         return bool(_PHONE_SHAPE.match(contact)) and 7 <= digits <= 15
     return True
+
+# ---------------- supporters ----------------
+MAX_PLEDGES = 3
+_ACTIVE_PLEDGE = "p.status IN ('pledged', 'handed_over') AND n.status <> 'fulfilled'"
+
+
+def _my_pledges(user_id: int):
+    with engine.connect() as c:
+        return c.execute(
+            text("SELECT p.id, p.status AS pstatus, p.created_at, n.category, n.province, n.district, "
+                 "n.public_text, n.status AS nstatus FROM pledges p JOIN needs n ON n.id = p.need_id "
+                 "WHERE p.supporter_id = :u ORDER BY p.id DESC"), {"u": user_id}).all()
+
+
+def _published_need(nid: int):
+    with engine.connect() as c:
+        return c.execute(
+            text("SELECT id, category, province, district, public_text, to_char(created_at, 'YYYY-MM') AS month "
+                 "FROM needs WHERE id = :i AND status = 'published'"), {"i": nid}).one_or_none()
+
+
+def _pledge_page(request, user, n, status_code=200, error=None):
+    return render(request, "pledge_form.html", status_code=status_code, user=user, n=n,
+                  label=dict(CATEGORIES)[n.category], error=error)
+
+
+@app.get("/support")
+def support_home(request: Request, category: str = "", province: str = "", done: str = "",
+                 page: int = Query(1, ge=1, le=1000), user=Depends(require_role("supporter"))):
+    if _bad_filter(category, province):
+        return Response("Unknown filter.", status_code=400, media_type="text/plain")
+    where, params = "status = 'published'", {}
+    if category:
+        where += " AND category = :c"
+        params["c"] = category
+    if province:
+        where += " AND province = :p"
+        params["p"] = province
+    with engine.connect() as c:
+        total = c.execute(text(f"SELECT count(*) FROM needs WHERE {where}"), params).scalar_one()
+        rows = c.execute(
+            text("SELECT id, category, province, district, public_text, to_char(created_at, 'YYYY-MM') AS month "
+                 f"FROM needs WHERE {where} ORDER BY id DESC LIMIT :lim OFFSET :off"),
+            {**params, "lim": PAGE_SIZE, "off": (page - 1) * PAGE_SIZE}).all()
+    pledges = _my_pledges(user.id)
+    active = sum(1 for p in pledges if p.pstatus in ("pledged", "handed_over") and p.nstatus != "fulfilled")
+
+    def link(n):
+        q = {k: v for k, v in (("category", category), ("province", province)) if v}
+        if n > 1:
+            q["page"] = n
+        return "/support" + ("?" + urlencode(q) if q else "")
+
+    return render(request, "support.html", user=user, rows=rows, total=total, category=category,
+                  province=province, categories=CATEGORIES, provinces=PROVINCES, labels=dict(CATEGORIES),
+                  pledges=pledges, active=active, max_pledges=MAX_PLEDGES, done=done,
+                  prev_url=link(page - 1) if page > 1 else None,
+                  next_url=link(page + 1) if page * PAGE_SIZE < total else None)
+
+
+@app.get("/support/pledge/{nid}")
+def pledge_page(request: Request, nid: int, user=Depends(require_role("supporter"))):
+    n = _published_need(nid)
+    if n is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return _pledge_page(request, user, n)
+
+
+@app.post("/support/pledge/{nid}")
+def pledge(request: Request, nid: int, contact_method: str = Form(...), contact: str = Form(...),
+           csrf: str = Form(...), user=Depends(require_role("supporter"))):
+    check_csrf(request, csrf)
+    n = _published_need(nid)
+    if n is None:
+        raise HTTPException(status_code=404, detail="not found")
+    contact = contact.strip()
+if not _contact_ok(contact_method, contact):
+        return _pledge_page(request, user, n, status_code=400, error="Check your contact details. Nothing was saved.")
+    with engine.begin() as conn:
+        conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 9000000 + user.id})
+        active = conn.execute(
+            text("SELECT count(*) FROM pledges p JOIN needs n ON n.id = p.need_id "
+                 "WHERE p.supporter_id = :u AND " + _ACTIVE_PLEDGE), {"u": user.id}).scalar_one()
+        if active >= MAX_PLEDGES:
+            return _pledge_page(request, user, n, status_code=429,
+                                error=f"You already have {MAX_PLEDGES} active pledges. Nothing was saved.")
+        got = conn.execute(
+            text("UPDATE needs SET status = 'pledged', updated_at = now() "
+                 "WHERE id = :i AND status = 'published' RETURNING id"), {"i": nid}).one_or_none()
+        if got is None:
+            return _pledge_page(request, user, n, status_code=409, error="This need is no longer available.")
+        conn.execute(
+            text("INSERT INTO pledges (need_id, supporter_id, contact_method, contact) VALUES (:n, :s, :m, :k)"),
+            {"n": nid, "s": user.id, "m": contact_method, "k": contact})
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'pledged')"),
+                     {"n": nid, "a": user.id})
+    return RedirectResponse("/support?done=pledged", status_code=303)
+
+
+@app.post("/support/cancel/{pid}")
+def pledge_cancel(request: Request, pid: int, csrf: str = Form(...), user=Depends(require_role("supporter"))):
+    check_csrf(request, csrf)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("UPDATE pledges SET status = 'cancelled' "
+                 "WHERE id = :p AND supporter_id = :u AND status = 'pledged' RETURNING need_id"),
+            {"p": pid, "u": user.id}).one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="not found")
+        back = conn.execute(
+            text("UPDATE needs SET status = 'published', updated_at = now() "
+                 "WHERE id = :n AND status = 'pledged' RETURNING id"), {"n": row.need_id}).one_or_none()
+        if back is None:
+            raise HTTPException(status_code=409, detail="the need could not be released")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'pledge_cancelled')"),
+                     {"n": row.need_id, "a": user.id})
+    return RedirectResponse("/support?done=cancelled", status_code=303)

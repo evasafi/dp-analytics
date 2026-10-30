@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Support{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/board">Public board</a></p>
+  {% if done == "pledged" %}<p><strong>Thank you. A verifier will contact you to arrange the handover.</strong></p>{% endif %}
+  {% if done == "cancelled" %}<p><strong>Your pledge was cancelled and the need is back on the board.</strong></p>{% endif %}
+
+  <h3>My pledges ({{ active }} of {{ max_pledges }} active)</h3>
+  {% if not pledges %}<p>You have not pledged to anything yet.</p>{% else %}
+  <table>
+    <tr><th>Pledged</th><th>Category</th><th>Place</th><th>What is needed</th><th>Status</th><th></th></tr>
+    {% for p in pledges %}
+    <tr><td>{{ p.created_at.strftime("%Y-%m-%d") }}</td><td>{{ labels[p.category] }}</td><td>{{ p.district }}, {{ p.province }}</td><td>{{ p.public_text }}</td>
+        <td>{% if p.nstatus == "fulfilled" %}Fulfilled{% elif p.pstatus == "pledged" %}Waiting for the verifier{% elif p.pstatus == "handed_over" %}Handover arranged{% else %}Cancelled{% endif %}</td>
+        <td>{% if p.pstatus == "pledged" and p.nstatus == "pledged" %}
+          <form method="post" action="/support/cancel/{{ p.id }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>
+        {% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h3>Needs you can help with</h3>
+  <form method="get" action="/support">
+    <label>Category <select name="category"><option value="">All</option>
+      {% for key, label in categories %}<option value="{{ key }}" {% if key == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+    <label>Province <select name="province"><option value="">All</option>
+      {% for code, name, lat, lon in provinces %}<option value="{{ name }}" {% if name == province %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select></label>
+    <button type="submit">Filter</button> <a href="/support">Clear</a>
+  </form>
+  <p>{{ total }} open need{{ "" if total == 1 else "s" }}</p>
+  {% if rows %}
+  <table>
+    <tr><th>Posted</th><th>Category</th><th>Place</th><th>What is needed</th><th></th></tr>
+    {% for r in rows %}
+    <tr><td>{{ r.month }}</td><td>{{ labels[r.category] }}</td><td>{{ r.district }}, {{ r.province }}</td><td>{{ r.public_text }}</td>
+        <td><a href="/support/pledge/{{ r.id }}">Pledge</a></td></tr>
+    {% endfor %}
+  </table>
+  <p>{% if prev_url %}<a href="{{ prev_url }}">Newer</a>{% endif %} {% if next_url %}<a href="{{ next_url }}">Older</a>{% endif %}</p>
+  {% endif %}
+  <hr>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+{% endblock %}
