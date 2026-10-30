@@ -9,13 +9,14 @@ The design, threat model, evaluation and the tested-versus-argued table are in `
 1. A requester posts a need: category, province, district, a description and a contact method. It starts as pending and is private.
 2. A verifier reviews it, writes the public text, and approves or rejects. A rejection carries a note the requester sees.
 3. Approved needs appear on a public board and a province map. The board shows only the category, province, district, month and the verifier's text. Anyone can browse it without an account.
-4. Analysts run differentially private queries over a separate synthetic dataset. Every query is charged against a shared privacy budget and logged.
+4. A supporter can pledge to an approved need (at most 3 at a time) and give a contact detail that only verifiers see. The verifier arranges the handover outside AidBridge, then marks the need fulfilled or releases it back to the board.
+5. Analysts run differentially private queries over a separate synthetic dataset. Every query is charged against a shared privacy budget and logged.
 
 No money moves through the platform. It connects people, and any handover happens outside it.
 
 ## Status
 
-Built. Everything below has script tests except the map drawing and the form dropdowns, which were checked by eye or not yet checked (see section 5 of `THREAT_MODEL.md`):
+Built. Everything below has script tests except the map drawing, the form dropdowns and the pledge and handover page layouts, which were checked by eye or not yet checked (see section 5 of `THREAT_MODEL.md`):
 
 - Sign-up for requesters and supporters, with sign-in, CSRF tokens, login lockout and a sign-up throttle.
 - Posting a need, with fixed province and district lists (validated as a pair) and a contact method with format checks. At most 3 pending needs per requester.
@@ -23,12 +24,11 @@ Built. Everything below has script tests except the map drawing and the form dro
 - The public board and province map, with filters and a per-address rate limit.
 - The analytics engine over the synthetic dataset: count or mean, up to two group-bys, filters, a preview of cost and error, stored results and CSV download.
 - A shared privacy budget that is spent atomically and cannot be refunded by the app, and an append-only audit log.
-- Database rules for the needs status flow and one active pledge per need.
+- Pledging: a supporter pledges to a published need (at most 3 active pledges) with a private contact detail, and can cancel until the handover is arranged. The verifier sees both contacts, marks the handover arranged, marks the need fulfilled, or releases it back to the board with a reason. A database trigger enforces the status order, and one active pledge per need.
 
 Not built:
 
-- Pledging and the supporter pages. A supporter can register, but then sees only a plain "signed in" page.
-- The handover step and marking a need fulfilled. The database rules exist, but there are no web pages for them.
+- Notifications to either side, and expiry of pledges nobody follows up. An abandoned pledge holds a need until a verifier releases it.
 - Analytics over the needs data. The analytics engine runs only on the original synthetic beneficiary dataset, and the two halves are not connected.
 - Email or phone verification, field-level encryption, hash-chained audit logs, and a per-person budget split.
 
@@ -38,8 +38,8 @@ Not built:
 |---|---|---|
 | Visitor | no account | Browse the board and map |
 | Requester | open sign-up | Post needs, see the status of its own needs |
-| Supporter | open sign-up | Register only, for now |
-| Verifier | `seed_verifier.py` | Review needs, see private descriptions and contact details |
+| Supporter | open sign-up | Browse published needs, pledge to up to 3, cancel until the handover is arranged |
+| Verifier | `seed_verifier.py` | Review needs, see private descriptions and contact details, arrange handovers, mark needs fulfilled, release pledges |
 | Analyst | `seed_users.py` | Run private queries |
 | Admin | `seed_users.py` | See the audit log and the budget, never results or needs |
 | Field agent | `seed_users.py` | Add records to the synthetic analytics dataset (original design, write-only) |
