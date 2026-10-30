@@ -1,4 +1,4 @@
-# Privacy-preserving analytics for humanitarian data
+# AidBridge
 
 Web app with differential privacy on every query and a global privacy budget. Synthetic data only.
 Design, threat model, evaluation, and the tested-versus-argued table are in `THREAT_MODEL.md`.

@@ -1,4 +1,4 @@
-# Threat model and evidence: privacy-preserving analytics platform
+# AidBridge: threat model and evidence
 
 Status: development build, synthetic data only. Nothing here has been run against real beneficiary records.
 
