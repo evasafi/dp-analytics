@@ -30,6 +30,12 @@ Scenario: a cash and services assistance program. Gender-based violence caseload
 | Sessions | Signed cookie holding only the user id; role re-read from the database on every request; 8 hour expiry; HttpOnly; SameSite=Strict; CSRF token on every POST | Role cannot be forged by editing the cookie. |
 | Passwords | argon2; unknown usernames still run a dummy hash check | Equalises response timing. |
 | Login limiting | 5 failures per username or 20 per IP in 5 minutes locks login, even for the correct password | Slows online guessing. |
+| Matching flow | A requester posts a need, a verifier approves or rejects it, and approved needs appear on a public board and map. A pledge goes to the verifier, who would arrange the handover. No money moves through the platform. | Connects people without handling payments or contact between strangers. Pledging and handover are not built yet. |
+| Needs data | Needs, pledges and events live in their own tables, apart from the analytics dataset. Each need stores a private description and contact, and the public text is written by the verifier. A CHECK refuses to publish a need without public text. | Only reviewed text can reach the public. |
+| Status order | A trigger allows only pending to published or rejected, published to pledged, and pledged back to published or on to fulfilled. A unique index allows one active pledge per need. | A bug in a route cannot skip verification. |
+| Places | Province and district are chosen from fixed lists (81 provinces, 973 districts) and validated as a pair. Names are plain ASCII. | Clean place data for the map, and for analytics later. |
+| Public board | No sign-in. Only published needs, showing month, category, province, district and the verifier's text. No cookies, a limit of 60 requests a minute per address, and a map drawn from our own files with no third-party tiles. | Public by design, so it shows as little as possible. |
+| Sign-up and roles | Requesters and supporters can sign up. Verifiers, analysts, admins and field agents are created by script. Sign-ups are throttled per address. | Nobody can promote themselves. |
 
 ## 2. Threat model
 
@@ -201,6 +207,12 @@ Tested (a script in the repo shows it):
 | Count and mean-sum noise are statistically consistent with the stated epsilon and sensitivities | `dev/test_dp_statistical.py`: 400,000 samples per input on neighbouring values, run twice; worst excess over the epsilon bound was 2.4 to 2.5 SE (count) and 2.2 to 3.0 SE (sum), under a 4 SE threshold. Two deliberately mis-calibrated controls were flagged at 65 and 100 SE. This is an empirical check on the noise only: it cannot detect floating-point leaks, does not test composition, and does not cover the mean as a ratio |
 | Grouped engine noise is statistically consistent with epsilon for counts, and cells are independent | `dev/test_engine_dp.py`, run twice: adding one person to one cell gave a worst excess of 1.4 and 2.2 SE (threshold 4); the unchanged cell showed 0.1 and 0.0 SE; a mis-calibrated control was flagged at about 46 SE; cell noise correlation was -0.0034 and -0.0031 (limit 0.0089). Add/remove adjacency only |
 | A grouped query is charged once per query, not once per cell, and holds under concurrency | `dev/test_engine_run.py` (owner password): 20 simultaneous 96-cell queries on a budget of 1.0 gave 10 successes, 10 refusals, spent 1.0, 10 audit rows; a bad spec was refused before any charge |
+| Needs status order, the publishing rule and one pledge per need are enforced by the database | `dev/test_needs_db.py` (owner password): 24 checks. Illegal jumps (pending to fulfilled or pledged, published to fulfilled, anything out of fulfilled or rejected) are refused, publishing without public text is refused, a second active pledge is refused and cancelling frees the need, and out-of-range fields are refused by their own constraints |
+| Open sign-up cannot create privileged accounts, and the sign-up, pending-need and role limits hold | `dev/test_requesters.py` (owner password): 24 checks. Registering as verifier, admin, analyst or field agent is refused and creates nothing, the fourth pending need gets 429, the sixth sign-up from one address gets 429, supporters and anonymous visitors are refused on requester pages, and requesters see only their own needs |
+| Only verifiers can decide needs, and unsafe public text is refused | `dev/test_verifiers.py` (owner password): 27 checks. All other roles are refused on every verifier route, seven kinds of unsafe or invalid public text are refused with the need left pending, a second decision gets 409, a rejection needs a note that the requester then sees, and forged CSRF tokens are refused |
+| The public board shows only published needs and no private data, and its map data matches the database | `dev/test_board.py` (owner password): 19 checks. Private descriptions, contacts and review notes never appear, pending, rejected, pledged and fulfilled needs are not shown, hostile text is escaped, the board sets no cookies, filters and page numbers are validated, map counts equal the published needs per province, and requests over 60 a minute get 429 |
+| Province and district are fixed lists, validated as a pair | `dev/test_provinces.py` (9 checks) and `dev/test_districts.py` (10 checks), both with the owner password. Unknown, wrongly cased and hostile values are refused, a district from the wrong province is refused, a name shared by two provinces is accepted only in its own, and padded values are stored trimmed |
+| Contact method and format are checked, and the details stay private | `dev/test_contact.py` (owner password): 12 checks. Malformed phone, email and WhatsApp values and unknown methods are refused, a missing method defaults to other, the verifier sees the method and detail, and the requester's own list does not repeat them. The format rule tests the shape only |
 | Logout clears the session | After sign-out, a typed `/me` returned 401 |
 | Field submissions are capped per agent | `dev/test_field_cap.py`: with a cap of 5, seven submissions gave five 303s then two 429s, with exactly 5 rows and 5 audit rows added |
 | The cap holds under concurrency | `dev/test_field_cap_concurrent.py` (owner password): 20 simultaneous attempts at a cap of 10 gave 10 successes, 10 refusals, 10 audit rows. It reimplements the same lock-and-count SQL, so it proves the locking pattern against the app grants, not the route itself |
@@ -211,6 +223,18 @@ Argued but not tested:
 - A stolen database yields only hashes and pseudonymous plain-text records. Not attempted.
 - The audit log is append-only against the app role. Tested for `dp_app`; the owner is outside this claim.
 
+Reasoned from the code, not tested (matching side):
+- A verifier cannot decide a need they posted: the update query excludes it, but a verifier cannot post needs, so the case never occurs.
+- Two verifiers deciding one need at once: blocked by the update's `WHERE status = 'pending'` and by the trigger, but only tested one request at a time.
+- The pending-needs limit under simultaneous posts: guarded by an advisory lock, with no concurrency test.
+- Sign-ups counting toward the login lockout of the same address.
+- The board's rate limit across several server processes, or behind a proxy.
+
+Checked in a browser, not by a test:
+- The full path from posting to the map. A requester posted a need, a verifier approved it with the template text, and the public board showed it in the table with a bubble on its province. Click-to-filter on the map worked for Ankara.
+- The map outlines drawn from the boundary file, and the credit line under the map.
+- The district list changing with the province. This was inferred from a need accepted with a district of Istanbul. The script behind it was not otherwise exercised.
+- Not yet checked: the contact-method hint and input type changing in the form, and the board and map when the outline file is missing (the README says the board still works).
 ## 6. Reproducing
 
-`requirements.txt` pins the environment. `schema.sql` builds the database. `seed.py` creates 5,000 synthetic beneficiaries. Settings and secrets live in `.env`; copy `.env.example` to `.env` and fill in the placeholders.
+`requirements.txt` pins the environment. `schema.sql` builds every table, including the needs tables, the results table and the login-failure log. `seed.py` creates 5,000 synthetic beneficiaries, `seed_users.py` creates the analyst, admin and field-agent accounts, and `seed_verifier.py` creates a verifier. Settings and secrets live in `.env`; copy `.env.example` to `.env` and fill in the placeholders. The province and district lists are committed; the map outlines are not, and `README.md` explains how to rebuild them. Most tests in `dev/` need the database owner's password and create throwaway accounts. The last run from a fresh clone (commit `fa16031`) covered only the analytics path. The matching side, verifier seeding and the boundary-file rebuild have not been run from a clean clone.
