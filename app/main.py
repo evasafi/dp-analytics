@@ -394,13 +394,13 @@ def need_new_page(request: Request, user=Depends(require_role("requester"))):
 
 @app.post("/needs/new")
 def need_new(request: Request, category: str = Form(...), province: str = Form(...),
-             district: str = Form(...), description: str = Form(...), contact: str = Form(...),
+             district: str = Form(...), description: str = Form(...), contact: str = Form(...), contact_method: str = Form("other"),
              csrf: str = Form(...), user=Depends(require_role("requester"))):
     check_csrf(request, csrf)
     province, district = province.strip(), district.strip()
     description, contact = description.strip(), contact.strip()
     ok = (category in dict(CATEGORIES) and province in PROVINCE_NAMES and district in DISTRICTS_BY_PROVINCE.get(province, ())
-          and 10 <= len(description) <= 1000 and 3 <= len(contact) <= 200)
+          and 10 <= len(description) <= 1000 and _contact_ok(contact_method, contact))
     if not ok:
         return render(request, "need_new.html", status_code=400, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
                       error="Check the fields. Nothing was saved.")
@@ -413,9 +413,9 @@ def need_new(request: Request, category: str = Form(...), province: str = Form(.
             return render(request, "need_new.html", status_code=429, user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE,
                           error=f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.")
         nid = conn.execute(
-            text("INSERT INTO needs (requester_id, category, province, district, description, contact) "
-                 "VALUES (:u, :c, :p, :d, :t, :k) RETURNING id"),
-            {"u": user.id, "c": category, "p": province, "d": district, "t": description, "k": contact}).scalar_one()
+            text("INSERT INTO needs (requester_id, category, province, district, description, contact, contact_method) "
+                 "VALUES (:u, :c, :p, :d, :t, :k, :m) RETURNING id"),
+            {"u": user.id, "c": category, "p": province, "d": district, "t": description, "k": contact, "m": contact_method}).scalar_one()
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :u, 'submitted')"),
                      {"n": nid, "u": user.id})
     return RedirectResponse("/needs/mine?done=1", status_code=303)
@@ -449,7 +449,7 @@ def _public_text_problem(public_text: str, contact: str):
 def _need_for_review(nid: int):
     with engine.connect() as c:
         return c.execute(
-            text("SELECT id, requester_id, category, province, district, description, contact, status, created_at "
+            text("SELECT id, requester_id, category, province, district, description, contact, contact_method, status, created_at "
                  "FROM needs WHERE id = :i"), {"i": nid}).one_or_none()
 
 
@@ -614,3 +614,18 @@ def board_map_data(request: Request, category: str = ""):
     data = [{"name": n, "pcode": code, "lat": la, "lon": lo, "count": int(counts.get(n, 0))}
             for code, n, la, lo in PROVINCES]
     return JSONResponse(data, headers={"Cache-Control": "public, max-age=60"})
+
+# ---------------- contact details ----------------
+_EMAIL_SHAPE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+_PHONE_SHAPE = _re.compile(r"^\+?[0-9 ().-]{6,30}$")
+
+
+def _contact_ok(method: str, contact: str) -> bool:
+    if method not in ("phone", "email", "whatsapp", "other") or not 3 <= len(contact) <= 200:
+        return False
+    if method == "email":
+        return bool(_EMAIL_SHAPE.match(contact))
+    if method in ("phone", "whatsapp"):
+        digits = sum(ch.isdigit() and ch.isascii() for ch in contact)
+        return bool(_PHONE_SHAPE.match(contact)) and 7 <= digits <= 15
+    return True

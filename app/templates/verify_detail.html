@@ -9,7 +9,7 @@
     <tr><th>Posted</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
     <tr><th>Status</th><td>{{ n.status }}</td></tr>
     <tr><th>Description (private)</th><td>{{ n.description }}</td></tr>
-    <tr><th>Contact (private)</th><td>{{ n.contact }}</td></tr>
+    <tr><th>Contact (private)</th><td>{{ n.contact_method }}: {{ n.contact }}</td></tr>
   </table>
   {% if n.status == "pending" %}
   <h3>Approve</h3>

@@ -11,7 +11,14 @@
     <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option>{{ name }}</option>{% endfor %}</select></label>
        <label>District <select name="district" id="district">{% for d in districts_by_province[provinces[0][1]] %}<option>{{ d }}</option>{% endfor %}</select></label></p>
     <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" maxlength="1000" required></textarea></label></p>
-    <p><label>How a verifier can reach you (3 to 200 characters) <input name="contact" maxlength="200" required></label></p>
+    <p><label>How a verifier can reach you
+      <select name="contact_method" id="contact_method">
+        <option value="phone">Phone number</option>
+        <option value="email">Email address</option>
+        <option value="whatsapp">WhatsApp number</option>
+        <option value="other">Other</option>
+      </select></label>
+    <label><input name="contact" id="contact" maxlength="200" required></label></p>
     <p><button type="submit">Submit for review</button></p>
   </form>
   <hr>
@@ -28,6 +35,16 @@
       }
       prov.addEventListener('change', fill);
       fill();
+    })();
+  </script>
+  <script>
+    (function () {
+      var sel = document.getElementById('contact_method'), box = document.getElementById('contact');
+      var hints = {phone: ['tel', '+90 5xx xxx xx xx'], email: ['email', 'name@example.com'],
+                   whatsapp: ['tel', '+90 5xx xxx xx xx'], other: ['text', 'Say how a verifier can reach you']};
+      function update() { var h = hints[sel.value]; box.type = h[0]; box.placeholder = h[1]; }
+      sel.addEventListener('change', update);
+      update();
     })();
   </script>
 {% endblock %}
