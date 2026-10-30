@@ -95,6 +95,48 @@ Trust assumptions:
 Rule for public pages: they show published needs, or counts of them, and nothing else. The map counts are counts of listings that are already public, so they are not differentially private and are not meant to be. Counts of pending, rejected or fulfilled needs are statistics over private data, and belong on the analytics side behind differential privacy once that exists.
 
 Every submission and every verifier decision writes an event (who, when, and the note for a rejection). The event table is append-only for the application, but no page shows it yet, so reviewing a verifier's decisions currently needs database access.
+### 2.7 Matching side: threats
+
+Each entry says what the design does, which test in `dev/` shows it, and what is left over.
+
+**Fake or abusive requests.** Sign-up is open, and a verifier reviews every need before it is public.
+- Design: nothing reaches the board without approval. A requester can have at most 3 pending needs, each address can create 5 accounts per hour, and the privileged roles cannot be chosen at sign-up.
+- Tested: `test_requesters.py` (the fourth pending need and the sixth sign-up from one address are refused; attempts to register as verifier, admin, analyst or field agent are refused and create nothing).
+- Left over: many addresses can still flood the queue. The pending limit counts only pending needs, so a requester whose needs were approved can post more. There is no email or phone verification, no CAPTCHA and no password reset. The pending limit uses an advisory lock like the field cap, but only the field cap has a concurrency test.
+
+**Re-identification from the public text.**
+- Design: the board shows only the month, category, province, district and the verifier's text. The verifier's form starts from a template, and the server refuses public text containing an `@`, a link, a run of seven or more digits, or the requester's own contact string.
+- Tested: `test_verifiers.py` (seven kinds of unsafe text are refused and the need stays pending) and `test_board.py` (no private description, contact detail or review note appears on the board or in the map data, and hostile text is escaped).
+- Left over: the guard catches contact details, not descriptions. A name written in words, a street, or a distinctive item in a small district can still point at one household, and anyone can read the board. The contact-string check is a case-insensitive substring match, so a paraphrase passes. This rests on the verifier's judgement.
+
+**A careless or malicious verifier.**
+- Design: verifiers are created by script, not by sign-up. Each approval and rejection writes an event. A decision applies only to a pending need, and only verifiers can open the queue or a need's detail.
+- Tested: `test_verifiers.py` (all other roles are refused on every verifier route, a second decision on the same need is refused with 409, forged CSRF tokens are refused).
+- Left over: a verifier sees every contact detail and writes the public text, and nothing reviews the verifier's decisions. No page shows the event table, so reviewing them needs database access. A rule that a verifier cannot decide a need they posted themselves exists in the update query but is untested, because a verifier cannot post needs. Two verifiers deciding the same need at once is blocked by the same update and the database trigger, but it was only tested one request at a time.
+
+**Scraping the open board.**
+- Design: board pages and the map data share a limit of 60 requests per minute per address. Filters and page numbers are validated, and the board sets no cookies.
+- Tested: `test_board.py` (requests over the limit get 429, and the limit is shared with the map data).
+- Left over: the limit is held in memory, so it resets when the server restarts and is not shared between processes. It uses the connection address, so behind a proxy every visitor looks like one address. Slow scraping stays under the limit. The published data is public by design.
+
+**Contact details at rest.**
+- Design: the contact method and detail are stored with each need and shown only to verifiers, never on the board, in the map data, or on the requester's own list. Each method has a format check.
+- Tested: `test_contact.py` and `test_board.py`.
+- Left over: the details are stored in plain text and readable by the database owner. The checks test the shape, not that a number or address exists or belongs to the requester: any phone number of 7 to 15 digits is accepted. Field-level encryption was not built.
+
+**Sign-up abuse and username probing.**
+- Design: usernames and passwords are validated, duplicates are refused with a generic message, and sign-ups are throttled per address.
+- Tested: `test_requesters.py` (bad usernames, short passwords, duplicates and forged CSRF tokens are refused).
+- Left over: a refused duplicate still confirms that the name exists, so names can be probed within the sign-up limit. Sign-ups are recorded in the same table as failed logins, so five sign-ups from one address count toward that address's login lockout. That interaction was reasoned from the code and not tested.
+
+**Status order and pledges.**
+- Design: a database trigger allows only the intended status changes (pending to published or rejected, published to pledged, pledged back to published or on to fulfilled), and an index allows one active pledge per need.
+- Tested: `test_needs_db.py` (illegal jumps are refused, a second active pledge is refused, and cancelling frees the need).
+- Left over: the trigger checks the order of changes, not who may make them, so role checks live in the web routes. Pledging, handover and fulfilment have no web pages yet.
+
+**Boundary data and its licence.**
+- Design: the province and district lists come from the OCHA COD-AB Türkiye dataset (CC BY-IGO, via the Humanitarian Data Exchange), credited in the files, the README and under the map. The outline file is not committed.
+- Left over: the dataset's methodology says it was shared "for humanitarian use only", and it has not been confirmed that a student prototype is covered. The committed lists of names and codes come from the same dataset, so the same question applies to them. This should be settled with the dataset's contact or the supervisor before the repository is made public or the platform is deployed.
 ## 3. Evaluation
 
 Run on the 5,000-row seed snapshot (fixed seed 2026), 1,000 trials per cell, through the real `noise.py` functions without touching the budget. Source: `eval_accuracy.py`, output in `eval_accuracy.csv` and `eval_accuracy.png`.
@@ -136,7 +178,7 @@ Notes: the mean table reports the median, and the ratio of two noisy values has 
 - Slow guessing. An attacker staying under 5 attempts per 5 minutes per username is not blocked. argon2 makes each guess costly.
 - Side channels. Timing is only partly equalised (login). A refusal or a budget-exhausted message depends on state.
 - Database owner, host compromise, backups, and key management.
-- Unimplemented items from the plan: field-level encryption, hash-chained audit logs, per-user budget caps, admin account management, UI styling.
+- Unimplemented items from the plan: field-level encryption, hash-chained audit logs, per-user budget caps, admin account management, UI styling. Matching side: pledging and the supporter pages, the handover step and fulfilment, analytics over the needs data, email or phone verification, editing or withdrawing a need, and a way for someone to ask for their data to be removed.
 - Sign-in has a minimum password length only at seed time (12 characters); there is no password change page.
 
 ## 5. Evidence: tested versus argued
