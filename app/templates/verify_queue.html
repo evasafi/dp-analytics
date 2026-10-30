@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Review queue{% endblock %}
 {% block content %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (verifier).</p>
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/handovers">Pledges and handovers</a></p>
   {% if done == "approved" %}<p><strong>Approved and published.</strong></p>{% endif %}
   {% if done == "rejected" %}<p><strong>Rejected. The requester will see your note.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Handovers{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/verify">Review queue</a></p>
+  {% if done == "arranged" %}<p><strong>Handover marked as arranged.</strong></p>{% endif %}
+  {% if done == "fulfilled" %}<p><strong>Marked as fulfilled.</strong></p>{% endif %}
+  {% if done == "released" %}<p><strong>Released. The need is back on the board.</strong></p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <h3>Active pledges</h3>
+  <p class="note">Contact both people yourself, outside AidBridge. Their details are private and shown only here.</p>
+  {% if not rows %}<p>No active pledges.</p>{% endif %}
+  {% for r in rows %}
+  <table>
+    <tr><th>Need</th><td>{{ r.nid }}: {{ labels[r.category] }}, {{ r.district }}, {{ r.province }}</td></tr>
+    <tr><th>Public text</th><td>{{ r.public_text }}</td></tr>
+    <tr><th>Description (private)</th><td>{{ r.description }}</td></tr>
+    <tr><th>Requester contact (private)</th><td>{{ r.r_method }}: {{ r.r_contact }}</td></tr>
+    <tr><th>Supporter</th><td>{{ r.supporter }}</td></tr>
+    <tr><th>Supporter contact (private)</th><td>{{ r.s_method }}: {{ r.s_contact }}</td></tr>
+    <tr><th>Pledged</th><td>{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+    <tr><th>Status</th><td>{% if r.pstatus == "handed_over" %}Handover arranged{% else %}Waiting for a handover{% endif %}</td></tr>
+  </table>
+  <form method="post" action="/handovers/{{ r.id }}/{% if r.pstatus == 'handed_over' %}fulfil{% else %}arrange{% endif %}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit">{% if r.pstatus == "handed_over" %}Mark as fulfilled{% else %}Mark handover as arranged{% endif %}</button>
+  </form>
+  <form method="post" action="/handovers/{{ r.id }}/release">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><textarea name="note" rows="2" cols="50" maxlength="500" placeholder="Why release it back to the board?" required></textarea>
+    <button type="submit">Release to the board</button></p>
+  </form>
+  <hr>
+  {% endfor %}
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+{% endblock %}

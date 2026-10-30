@@ -746,3 +746,95 @@ def pledge_cancel(request: Request, pid: int, csrf: str = Form(...), user=Depend
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'pledge_cancelled')"),
                      {"n": row.need_id, "a": user.id})
     return RedirectResponse("/support?done=cancelled", status_code=303)
+
+# ---------------- handovers (verifiers) ----------------
+class _HandoverConflict(Exception):
+    pass
+
+
+def _handover_page(request, user, status_code=200, done="", error=None):
+    with engine.connect() as c:
+        rows = c.execute(
+            text("SELECT p.id, p.status AS pstatus, p.created_at, p.contact_method AS s_method, p.contact AS s_contact, "
+                 "su.username AS supporter, n.id AS nid, n.category, n.province, n.district, n.public_text, "
+                 "n.description, n.contact_method AS r_method, n.contact AS r_contact "
+                 "FROM pledges p JOIN needs n ON n.id = p.need_id JOIN users su ON su.id = p.supporter_id "
+                 "WHERE p.status IN ('pledged', 'handed_over') AND n.status = 'pledged' "
+                 "ORDER BY p.id LIMIT 100")).all()
+    return render(request, "handovers.html", status_code=status_code, user=user, rows=rows, done=done,
+                  error=error, labels=dict(CATEGORIES))
+
+
+def _pledge_exists(pid: int) -> bool:
+    with engine.connect() as c:
+        return c.execute(text("SELECT 1 FROM pledges WHERE id = :p"), {"p": pid}).scalar() is not None
+
+
+def _handover_conflict(request, user, pid: int):
+    if not _pledge_exists(pid):
+        raise HTTPException(status_code=404, detail="not found")
+    return _handover_page(request, user, status_code=409,
+                          error="This pledge has already changed. Nothing was done.")
+
+
+@app.get("/handovers")
+def handovers(request: Request, done: str = "", user=Depends(require_role("verifier"))):
+    return _handover_page(request, user, done=done)
+
+
+@app.post("/handovers/{pid}/arrange")
+def handover_arrange(request: Request, pid: int, csrf: str = Form(...), user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("UPDATE pledges SET status = 'handed_over' WHERE id = :p AND status = 'pledged' "
+                 "AND EXISTS (SELECT 1 FROM needs n WHERE n.id = pledges.need_id AND n.status = 'pledged') "
+                 "RETURNING need_id"), {"p": pid}).one_or_none()
+        if row is not None:
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'handover_arranged')"),
+                         {"n": row.need_id, "a": user.id})
+    if row is None:
+        return _handover_conflict(request, user, pid)
+    return RedirectResponse("/handovers?done=arranged", status_code=303)
+
+
+@app.post("/handovers/{pid}/fulfil")
+def handover_fulfil(request: Request, pid: int, csrf: str = Form(...), user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("UPDATE needs SET status = 'fulfilled', updated_at = now() WHERE status = 'pledged' "
+                 "AND id = (SELECT need_id FROM pledges WHERE id = :p AND status = 'handed_over') RETURNING id"),
+            {"p": pid}).one_or_none()
+        if row is not None:
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'fulfilled')"),
+                         {"n": row.id, "a": user.id})
+    if row is None:
+        return _handover_conflict(request, user, pid)
+    return RedirectResponse("/handovers?done=fulfilled", status_code=303)
+
+
+@app.post("/handovers/{pid}/release")
+def handover_release(request: Request, pid: int, note: str = Form(...), csrf: str = Form(...),
+                     user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    note = note.strip()
+    if not 3 <= len(note) <= 500:
+        return _handover_page(request, user, status_code=400, error="Write a reason of 3 to 500 characters. Nothing was done.")
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("UPDATE pledges SET status = 'cancelled' WHERE id = :p AND status IN ('pledged', 'handed_over') "
+                     "RETURNING need_id"), {"p": pid}).one_or_none()
+            if row is None:
+                raise _HandoverConflict()
+            back = conn.execute(
+                text("UPDATE needs SET status = 'published', updated_at = now() WHERE id = :n AND status = 'pledged' "
+                     "RETURNING id"), {"n": row.need_id}).one_or_none()
+            if back is None:
+                raise _HandoverConflict()
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'pledge_released', :r)"),
+                         {"n": row.need_id, "a": user.id, "r": note})
+    except _HandoverConflict:
+        return _handover_conflict(request, user, pid)
+    return RedirectResponse("/handovers?done=released", status_code=303)
