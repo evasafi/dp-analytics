@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     secret_key: str  # required: set DP_SECRET_KEY in .env
     epsilon_per_count: float = 0.1
     epsilon_per_histogram: float = 0.1
-    epsilon_per_mean: float = 0.2   # noisy sum + noisy count
+    epsilon_per_mean: float = 0.5   # noisy sum + noisy count
     field_daily_cap: int = 200
 
 
