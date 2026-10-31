@@ -108,7 +108,7 @@ try:
     r = a.post("/engine/needs/run", data={"grouping": "category", "csrf": ta}, follow_redirects=False)
     loc = r.headers.get("location", "")
     s1 = state()
-    check("needs run: 303 to a result page, throwaway charged 0.1, one audit row, one result, datasets 1 and 7 untouched",
+    check("needs run: 303 to a result page, throwaway charged 0.1, one audit row, one result, the beneficiary dataset and needs_synthetic untouched",
           r.status_code == 303 and loc.startswith("/engine/result/")
           and s1[0] - base[0] == Decimal("0.1") and s1[1] - base[1] == 1 and s1[2] - base[2] == 1
           and s1[3] == base[3] and s1[4] == base[4])

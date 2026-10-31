@@ -334,7 +334,7 @@ def engine_results(request: Request, user=Depends(require_role("analyst"))):
     return render(request, "engine_list.html", user=user, rows=rows)
 
 
-# ---------------- needs analytics (synthetic dataset 7) ----------------
+# ---------------- needs analytics (the needs_synthetic dataset) ----------------
 from app import needs_engine as ne
 
 NEEDS_DATASET_ID = None   # tests may set a throwaway id; otherwise it is looked up by name

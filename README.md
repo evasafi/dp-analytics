@@ -30,7 +30,7 @@ Built. Everything below has script tests except the map drawing, the form dropdo
 Not built:
 
 - Notifications to either side, and expiry of pledges nobody follows up. An abandoned pledge holds a need until a verifier releases it.
-- Analytics over the real needs table. Needs analytics runs only on a synthetic needs table (dataset 7); the real table (dataset 8) is not wired.
+- Analytics over the real needs table. Needs analytics runs only on a synthetic needs table (the `needs_synthetic` dataset); the real table (the `needs_live` dataset) is not wired.
 - Email or phone verification, field-level encryption, hash-chained audit logs, and a per-person budget split.
 
 ## Roles

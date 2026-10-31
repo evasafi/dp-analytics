@@ -112,7 +112,7 @@ try:
             check(False, f"B dataset {other} was NOT refused")
         except ValueError:
             pass
-    check(spent(SYN) == spent7 and spent(LIVE) == spent8, "B unlisted dataset ids refused; budgets of 7 and 8 untouched")
+    check(spent(SYN) == spent7 and spent(LIVE) == spent8, "B unlisted dataset ids refused; budgets of needs_synthetic and needs_live untouched")
     for g, n in ((("category",), 10), (("province",), 81), (("status",), 5), (("category", "status"), 50)):
         ne.validate_needs(Spec("count", g), ds)
         check(ne.cell_count(Spec("count", g)) == n, f"B allowed grouping {g} has {n} cells")
