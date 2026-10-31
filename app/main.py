@@ -123,7 +123,7 @@ def _analyst_page(request: Request, user, status_code: int = 200, **ctx):
              "histogram": settings.epsilon_per_histogram,
              "mean": settings.epsilon_per_mean}
     return render(request, "analyst.html", status_code=status_code, user=user,
-                  budget=_budget(), regions=REGIONS, costs=costs, **ctx)
+                  budget=_budget(), needs_budget=_needs_budget(), needs_cost=settings.epsilon_per_count, regions=REGIONS, costs=costs, **ctx)
 
 
 @app.get("/analyst")
@@ -333,6 +333,66 @@ def engine_results(request: Request, user=Depends(require_role("analyst"))):
             "ORDER BY r.id DESC LIMIT 50"), {"u": user.id}).all()
     return render(request, "engine_list.html", user=user, rows=rows)
 
+
+# ---------------- needs analytics (synthetic dataset 7) ----------------
+from app import needs_engine as ne
+
+NEEDS_DATASET_ID = 7
+NEEDS_GROUPINGS = {"category": ("category",), "province": ("province",),
+                   "status": ("status",), "category_status": ("category", "status")}
+
+
+def _needs_budget():
+    with engine.connect() as c:
+        row = c.execute(
+            text("SELECT epsilon_total, epsilon_spent FROM datasets WHERE id = :d"),
+            {"d": NEEDS_DATASET_ID},
+        ).one()
+    return {"total": row.epsilon_total, "spent": row.epsilon_spent,
+            "remaining": row.epsilon_total - row.epsilon_spent}
+
+
+def _needs_spec(grouping):
+    g = NEEDS_GROUPINGS.get(grouping)
+    if g is None:
+        raise ValueError("unknown grouping")
+    spec = Spec("count", g)
+    ne.validate_needs(spec, NEEDS_DATASET_ID)
+    return spec
+
+
+@app.post("/engine/needs/preview")
+def engine_needs_preview(request: Request, grouping: str = Form(...),
+                         csrf: str = Form(...), user=Depends(require_role("analyst"))):
+    check_csrf(request, csrf)
+    try:
+        spec = _needs_spec(grouping)
+    except ValueError:
+        return _analyst_page(request, user, status_code=400,
+                             error="Invalid query. Nothing was charged.")
+    est = ne.estimate(spec, NEEDS_DATASET_ID)
+    budget = _needs_budget()
+    after = budget["remaining"] - Decimal(str(est["epsilon"]))
+    return render(request, "engine_preview.html", user=user, est=est,
+                  remaining=budget["remaining"], after=after,
+                  run_action="/engine/needs/run", fields=[("grouping", grouping)])
+
+
+@app.post("/engine/needs/run")
+def engine_needs_run(request: Request, grouping: str = Form(...),
+                     csrf: str = Form(...), user=Depends(require_role("analyst"))):
+    check_csrf(request, csrf)
+    try:
+        spec = _needs_spec(grouping)
+        with engine.begin() as conn:
+            res = ne.run_needs_query(conn, user.id, NEEDS_DATASET_ID, spec)
+    except BudgetExhausted:
+        return _analyst_page(request, user, status_code=409,
+                             error="Privacy budget exhausted. No answer was released.")
+    except ValueError:
+        return _analyst_page(request, user, status_code=400,
+                             error="Invalid query. Nothing was charged.")
+    return RedirectResponse(f"/engine/result/{res['result_id']}", status_code=303)
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 

@@ -35,6 +35,22 @@
   <p class="note">Preview shows the cost and expected error. Nothing is charged until you confirm.</p>
 
   <hr>
+  <h3>Needs (synthetic data)</h3>
+  <p>Needs budget: <strong>{{ "%.1f"|format(needs_budget.remaining) }}</strong> remaining of {{ "%.1f"|format(needs_budget.total) }}</p>
+  <progress value="{{ needs_budget.spent|float }}" max="{{ needs_budget.total|float }}"></progress>
+  <p class="note">Counts of needs, not people. Each requester counts for at most their first 3 needs. The data is synthetic and its distributions are assumptions. Cost {{ needs_cost }} per query.</p>
+  <form method="post" action="/engine/needs/preview">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <select name="grouping">
+      <option value="category">by category</option>
+      <option value="province">by province</option>
+      <option value="status">by status</option>
+      <option value="category_status">by category and status</option>
+    </select>
+    <button type="submit">Preview (free)</button>
+  </form>
+
+  <hr>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">Sign out</button>
