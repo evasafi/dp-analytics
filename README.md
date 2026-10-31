@@ -23,13 +23,14 @@ Built. Everything below has script tests except the map drawing, the form dropdo
 - The verifier queue: approve with a guarded public text, or reject with a note.
 - The public board and province map, with filters and a per-address rate limit.
 - The analytics engine over the synthetic dataset: count or mean, up to two group-bys, filters, a preview of cost and error, stored results and CSV download.
+- Needs analytics over a synthetic needs table: counts only, four fixed groupings, each requester's first 3 needs counted, noise at sensitivity 3. Tested, but the form has not yet been looked at in a browser.
 - A shared privacy budget that is spent atomically and cannot be refunded by the app, and an append-only audit log.
 - Pledging: a supporter pledges to a published need (at most 3 active pledges) with a private contact detail, and can cancel until the handover is arranged. The verifier sees both contacts, marks the handover arranged, marks the need fulfilled, or releases it back to the board with a reason. A database trigger enforces the status order, and one active pledge per need.
 
 Not built:
 
 - Notifications to either side, and expiry of pledges nobody follows up. An abandoned pledge holds a need until a verifier releases it.
-- Analytics over the needs data. The analytics engine runs only on the original synthetic beneficiary dataset, and the two halves are not connected.
+- Analytics over the real needs table. Needs analytics runs only on a synthetic needs table (dataset 7); the real table (dataset 8) is not wired.
 - Email or phone verification, field-level encryption, hash-chained audit logs, and a per-person budget split.
 
 ## Roles
@@ -79,6 +80,8 @@ The scripts in `dev/` are run from the project root as modules, for example `pyt
 ## Queries (analytics)
 
 Analysts build a query on `/analyst`: count or mean of monthly transfer, up to two group-bys (region, household size, transfer band) and optional filters. A preview shows cost and expected error before anything is charged. A count costs 0.1 and a mean costs 0.5, however many cells; the total budget is 10.0. Results are stored, so reopening one or downloading its CSV is free. Cells with a noisy count below 30 are shown as suppressed, but shown values can still be noise.
+
+Needs analytics has its own form on `/analyst`: counts of needs by category, province, status, or category and status, at 0.1 each from a separate budget of 10.0. Each requester counts for at most their first 3 needs, so noise is 3 times larger than for people counts (typical error about 30 per cell). The data is synthetic and its distributions are assumptions.
 
 `noise.py` and `queries.py` are the older fixed-query code. The web app no longer uses them, but earlier tests still do.
 
