@@ -209,7 +209,7 @@ Tested (a script in the repo shows it):
 | Spend is atomic under concurrency | `test_budget.py`: 20 simultaneous spends of 0.5 against 5.0 gave exactly 10 successes, 10 refusals, final 5.0 |
 | App role cannot update or delete the audit log, refund the budget, exceed it, or raise the total | Seven direct SQL tests run as `dp_app` |
 | Laplace noise is calibrated and unbiased | 20,000 samples: mean absolute error 9.97 (expected 10), average 500.07 (true 500); wrapper: 499.91 and 9.93 |
-| Refused means are charged and logged | `test_refusal.py`: 60 calls, every call moved the budget by 0.2 and wrote one audit row |
+| Refused means are charged and logged | `test_refusal.py`: 60 calls (29 refused, 31 answered), every call moved the budget by 0.5 (the mean cost) and wrote one audit row |
 | Spend, answer, and audit row agree through the web path | Four queries spent 0.8, matching four audit rows with the right parameters |
 | Role separation holds for all roles and anonymous users | `test_roles.py`, `test_field.py`, `test_admin.py` |
 | Refused requests cost no budget | Budget unchanged after refused requests in `test_roles.py` and `test_admin.py` |
