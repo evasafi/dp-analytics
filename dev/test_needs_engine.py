@@ -16,7 +16,7 @@ pw = getpass.getpass("postgres password: ")
 admin = create_engine(f"postgresql+psycopg://postgres:{quote(pw, safe='')}@localhost:5432/dp_analytics")
 
 EPS = settings.epsilon_per_count
-SYN = 7
+SYN = ne.needs_dataset_id()
 checks = 0
 
 
@@ -51,7 +51,8 @@ with admin.begin() as c:
     uid = c.execute(text("SELECT id FROM users WHERE username='analyst1'")).scalar_one()
 
 rows_before = scalar("SELECT count(*) FROM needs_synth")
-spent7, spent8 = spent(7), spent(8)
+LIVE = scalar("SELECT id FROM datasets WHERE name = 'needs_live'")
+spent7, spent8 = spent(SYN), spent(LIVE)
 orig_max_cells = ne.MAX_CELLS
 ne.SOURCES[ds] = "needs_synth"      # test-only: whitelist the throwaway dataset
 
@@ -104,14 +105,14 @@ try:
         except ValueError:
             pass
         check(spent(ds) == 0, f"B refused: {name}; spent still 0")
-    for other in (8, 999999):
+    for other in (LIVE, 999999):
         try:
             with engine.begin() as conn:
                 ne.run_needs_query(conn, uid, other, cat)
             check(False, f"B dataset {other} was NOT refused")
         except ValueError:
             pass
-    check(spent(7) == spent7 and spent(8) == spent8, "B unlisted dataset ids refused; budgets of 7 and 8 untouched")
+    check(spent(SYN) == spent7 and spent(LIVE) == spent8, "B unlisted dataset ids refused; budgets of 7 and 8 untouched")
     for g, n in ((("category",), 10), (("province",), 81), (("status",), 5), (("category", "status"), 50)):
         ne.validate_needs(Spec("count", g), ds)
         check(ne.cell_count(Spec("count", g)) == n, f"B allowed grouping {g} has {n} cells")

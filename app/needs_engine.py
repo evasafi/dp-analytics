@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from app.budget import spend
 from app.config import settings
+from app.db import engine
 from app.engine import MAX_CELLS, Spec
 from app.noise import _laplace
 from app.provinces import PROVINCES
@@ -37,7 +38,18 @@ ALLOWED_GROUPINGS = {
     frozenset(["category", "status"]),
 }
 # dataset id -> table (whitelist; table names are never taken from input)
-SOURCES = {7: "needs_synth"}
+SOURCES = {}   # dataset id -> table. The real dataset is added on first use; tests add throwaway ids.
+_REAL = {"id": None}
+
+
+def needs_dataset_id() -> int:
+    """Id of the needs_synthetic dataset, looked up by name once (ids differ between databases)."""
+    if _REAL["id"] is None:
+        with engine.connect() as c:
+            _REAL["id"] = c.execute(
+                text("SELECT id FROM datasets WHERE name = 'needs_synthetic'")).scalar_one()
+    SOURCES.setdefault(_REAL["id"], "needs_synth")
+    return _REAL["id"]
 
 
 def cell_count(spec: Spec) -> int:
@@ -48,6 +60,7 @@ def cell_count(spec: Spec) -> int:
 
 
 def validate_needs(spec: Spec, dataset_id: int) -> None:
+    needs_dataset_id()   # makes sure the real dataset is whitelisted
     if dataset_id not in SOURCES:
         raise ValueError("dataset not available for needs analytics")
     if spec.measure != "count":

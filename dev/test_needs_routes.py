@@ -67,7 +67,7 @@ def state():
                 q("SELECT count(*) FROM audit_log WHERE dataset_id=:d", d=DS),
                 q("SELECT count(*) FROM results WHERE dataset_id=:d", d=DS),
                 q("SELECT epsilon_spent FROM datasets WHERE id=1"),
-                q("SELECT epsilon_spent FROM datasets WHERE id=7"))
+                q("SELECT epsilon_spent FROM datasets WHERE id=:n", n=ne.needs_dataset_id()))
 
 
 ne.SOURCES[DS] = "needs_synth"
@@ -154,7 +154,7 @@ try:
     check("forged CSRF on both needs routes: 403, nothing charged",
           r1.status_code == 403 and r2.status_code == 403 and state() == s3)
 finally:
-    main.NEEDS_DATASET_ID = 7
+    main.NEEDS_DATASET_ID = None
     ne.SOURCES.pop(DS, None)
     with admin.begin() as c:
         cleanup(c)

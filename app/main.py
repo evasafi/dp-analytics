@@ -337,7 +337,11 @@ def engine_results(request: Request, user=Depends(require_role("analyst"))):
 # ---------------- needs analytics (synthetic dataset 7) ----------------
 from app import needs_engine as ne
 
-NEEDS_DATASET_ID = 7
+NEEDS_DATASET_ID = None   # tests may set a throwaway id; otherwise it is looked up by name
+
+
+def _needs_id():
+    return NEEDS_DATASET_ID if NEEDS_DATASET_ID is not None else ne.needs_dataset_id()
 NEEDS_GROUPINGS = {"category": ("category",), "province": ("province",),
                    "status": ("status",), "category_status": ("category", "status")}
 
@@ -346,7 +350,7 @@ def _needs_budget():
     with engine.connect() as c:
         row = c.execute(
             text("SELECT epsilon_total, epsilon_spent FROM datasets WHERE id = :d"),
-            {"d": NEEDS_DATASET_ID},
+            {"d": _needs_id()},
         ).one()
     return {"total": row.epsilon_total, "spent": row.epsilon_spent,
             "remaining": row.epsilon_total - row.epsilon_spent}
@@ -357,7 +361,7 @@ def _needs_spec(grouping):
     if g is None:
         raise ValueError("unknown grouping")
     spec = Spec("count", g)
-    ne.validate_needs(spec, NEEDS_DATASET_ID)
+    ne.validate_needs(spec, _needs_id())
     return spec
 
 
@@ -370,7 +374,7 @@ def engine_needs_preview(request: Request, grouping: str = Form(...),
     except ValueError:
         return _analyst_page(request, user, status_code=400,
                              error="Invalid query. Nothing was charged.")
-    est = ne.estimate(spec, NEEDS_DATASET_ID)
+    est = ne.estimate(spec, _needs_id())
     budget = _needs_budget()
     after = budget["remaining"] - Decimal(str(est["epsilon"]))
     return render(request, "engine_preview.html", user=user, est=est,
@@ -385,7 +389,7 @@ def engine_needs_run(request: Request, grouping: str = Form(...),
     try:
         spec = _needs_spec(grouping)
         with engine.begin() as conn:
-            res = ne.run_needs_query(conn, user.id, NEEDS_DATASET_ID, spec)
+            res = ne.run_needs_query(conn, user.id, _needs_id(), spec)
     except BudgetExhausted:
         return _analyst_page(request, user, status_code=409,
                              error="Privacy budget exhausted. No answer was released.")
