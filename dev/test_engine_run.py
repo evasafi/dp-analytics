@@ -11,7 +11,7 @@ from app.engine import Spec
 from app.engine_run import run_query
 
 pw = getpass.getpass("postgres password: ")
-admin = create_engine(f"postgresql+psycopg://postgres:{quote(pw, safe='')}@localhost:5432/dp_analytics_clone")
+admin = create_engine(f"postgresql+psycopg://postgres:{quote(pw, safe='')}@localhost:5432/dp_analytics")
 
 
 def cleanup(c):
