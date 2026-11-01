@@ -45,7 +45,7 @@ try:
 
     page = cl.get("/needs/new")
     prov_select = re.search(r'<select name="province"[^>]*>(.*?)</select>', page.text, re.S).group(1)
-options = re.findall(r'<option value="([^"]+)"', prov_select)
+    options = re.findall(r'<option value="([^"]+)"', prov_select)
     check("form shows all 81 provinces as a dropdown", set(names) <= set(options) and 'name="province" maxlength' not in page.text, str(len(options)))
 
     def post(province):
