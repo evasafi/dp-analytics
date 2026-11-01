@@ -1,4 +1,4 @@
-﻿import getpass
+import getpass
 import threading
 from decimal import Decimal
 from urllib.parse import quote
@@ -11,10 +11,11 @@ from app.engine import Spec
 from app.engine_run import run_query
 
 pw = getpass.getpass("postgres password: ")
-admin = create_engine(f"postgresql+psycopg://postgres:{quote(pw, safe='')}@localhost:5432/dp_analytics")
+admin = create_engine(f"postgresql+psycopg://postgres:{quote(pw, safe='')}@localhost:5432/dp_analytics_clone")
 
 
 def cleanup(c):
+    c.execute(text("DELETE FROM results WHERE dataset_id IN (SELECT id FROM datasets WHERE name='engine_test')"))
     c.execute(text("DELETE FROM audit_log WHERE dataset_id IN (SELECT id FROM datasets WHERE name='engine_test')"))
     c.execute(text("DELETE FROM beneficiaries WHERE dataset_id IN (SELECT id FROM datasets WHERE name='engine_test')"))
     c.execute(text("DELETE FROM datasets WHERE name='engine_test'"))
@@ -62,6 +63,7 @@ try:
         c.execute(text("ALTER TABLE datasets DISABLE TRIGGER datasets_spend_only"))
         c.execute(text("UPDATE datasets SET epsilon_spent = 0 WHERE id = :d"), {"d": ds})
         c.execute(text("ALTER TABLE datasets ENABLE TRIGGER datasets_spend_only"))
+        c.execute(text("DELETE FROM results WHERE dataset_id = :d"), {"d": ds})
         c.execute(text("DELETE FROM audit_log WHERE dataset_id = :d"), {"d": ds})
     results, lock, barrier = [], threading.Lock(), threading.Barrier(20)
 
