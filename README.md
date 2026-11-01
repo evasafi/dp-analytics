@@ -48,19 +48,20 @@ Not built:
 ## Setup (Windows PowerShell, Python 3.14, PostgreSQL 18)
 
 1. `python -m venv .venv`, activate it, then `pip install -r requirements.txt`
-2. In `psql` as `postgres`, create the app role and database:
+2. In `psql` as `postgres` (on Windows `psql` is usually not on PATH; use the full path, for example `& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost`), create the app role and database:
    `CREATE ROLE dp_app LOGIN PASSWORD 'choose-a-password';` and `CREATE DATABASE dp_analytics OWNER postgres;`
-3. Apply the schema as `postgres`: `psql -U postgres -h localhost -d dp_analytics -f schema.sql`
+3. Apply the schema as `postgres`: `psql -U postgres -h localhost -d dp_analytics -f schema.sql`. It already contains everything in the `add_*.sql` files; those are history, so do not run them on top.
 4. Copy `.env.example` to `.env`. Set `DP_DATABASE_URL` to use your `dp_app` password, and set `DP_SECRET_KEY` to the output of
-   `python -c "import secrets; print(secrets.token_hex(32))"`
+   `python -c "import secrets; print(secrets.token_hex(32))"`. Copy the `DP_DATABASE_URL` password exactly, then check it without printing it: `python -c "from sqlalchemy.engine import make_url; from app.config import settings; u=make_url(settings.database_url); print(u.username, u.database, len(u.password or ''))"` (compare the length with the real password).
 5. Seed the synthetic data and the accounts:
    - `python seed.py`
    - `python seed_users.py` prompts for three passwords (12+ characters each): field1, analyst1, admin1
    - `python seed_verifier.py` prompts for a verifier username and password
+   - `python seed_needs_synth.py` fills the synthetic needs table used by the needs analytics
 6. Optional, for the map outlines: see "Boundary data" below. Without the file the board keeps working and the map area says it is unavailable (checked in a browser).
 7. Run: `uvicorn app.main:app --reload`, then type `127.0.0.1:8000/board` or `127.0.0.1:8000/login` into the browser. Do not follow a link into the app, because the session cookie is SameSite=Strict.
 
-The last full run from a fresh clone was at commit `fa16031` and covered only the analytics path. The needs-matching side, verifier seeding, the boundary file and step 2 (creating the `dp_app` role, which already existed on the test machine) have not been tested from a clean clone.
+The last full run from a fresh clone was at commit `7dd295a`. It covered the schema, `pip install -r requirements.txt`, `.env.example`, all four seed scripts (including the verifier and `seed_needs_synth.py`, which reproduced 20194 needs from 12000 people) and all 18 test scripts in `dev/`. On that database `needs_synthetic` had id 2, not 7, and the needs tests passed. Two stale tests were found and fixed (`test_engine_run` did not delete `results` rows; `test_provinces` used an out-of-date pattern). The outline file is gitignored, so the clone had none; the board tests passed without it, but rebuilding the file from `tools/` was not tried. Step 2 (creating the `dp_app` role, which already existed on the test machine) and the browser checks have not been tested from a clean clone. Exit codes were the evidence for most of the test runs.
 
 ## Boundary data
 
