@@ -76,6 +76,8 @@ To regenerate the two Python lists, run these from the project root, in this ord
 
 ## Tests
 
+Resetting the demo: `python tools\remove_demo_data.py` removes one named requester (default Tugba), one named supporter (default Diane) and everything attached to them (their needs, pledges and events). It is a rehearsal by default: the real DELETE statements run in a transaction that is rolled back. `--apply` plus typing `DELETE` commits. It refuses to run if anything unexpected is attached to those users or the counts differ from `--expect`, and it never touches the audit log, stored results or budgets. The defaults are this project's demo accounts, so on other data pass `--requester`, `--supporter` and `--expect`.
+
 The scripts in `dev/` are run from the project root as modules, for example `python -m dev.test_board`. Most need the database owner's password, which they prompt for with hidden input, and they create and remove throwaway accounts. They never touch the real accounts. Do not run them against a database holding real data. `dev/README.md` lists the older scripts; the newer ones are the other `test_*.py` files in the same folder.
 
 ## Queries (analytics)
