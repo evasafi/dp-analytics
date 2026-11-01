@@ -23,7 +23,7 @@ Built. Everything below has script tests except the map drawing, the form dropdo
 - The verifier queue: approve with a guarded public text, or reject with a note.
 - The public board and province map, with filters and a per-address rate limit.
 - The analytics engine over the synthetic dataset: count or mean, up to two group-bys, filters, a preview of cost and error, stored results and CSV download.
-- Needs analytics over a synthetic needs table: counts only, four fixed groupings, each requester's first 3 needs counted, noise at sensitivity 3. Tested, but the form has not yet been looked at in a browser.
+- Needs analytics over a synthetic needs table: counts only, four fixed groupings, each requester's first 3 needs counted, noise at sensitivity 3. Tested, and the form, the four previews and one result page (count by category) were checked in a browser.
 - A shared privacy budget that is spent atomically and cannot be refunded by the app, and an append-only audit log.
 - Pledging: a supporter pledges to a published need (at most 3 active pledges) with a private contact detail, and can cancel until the handover is arranged. The verifier sees both contacts, marks the handover arranged, marks the need fulfilled, or releases it back to the board with a reason. A database trigger enforces the status order, and one active pledge per need.
 
