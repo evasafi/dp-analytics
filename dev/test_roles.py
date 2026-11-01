@@ -1,12 +1,26 @@
+import getpass
 import re
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
+from app.auth import hash_password
 from app.db import engine
 from app.main import app
 
-pw = input("field1 password (visible): ")
+PW = "throwaway-password-1"
+owner = getpass.getpass("postgres password: ")
+admin_db = create_engine(f"postgresql+psycopg://postgres:{quote(owner, safe='')}@localhost:5432/dp_analytics")
+USERS = {"rl_f": "field_agent"}
+NAMES = list(USERS)
+fails = []
+
+
+def check(label, ok):
+    print(("OK   " if ok else "FAIL ") + label)
+    if not ok:
+        fails.append(label)
 
 
 def csrf_from(html):
@@ -18,31 +32,49 @@ def spent():
         return c.execute(text("SELECT epsilon_spent FROM datasets WHERE id = 1")).scalar_one()
 
 
-client = TestClient(app, base_url="http://127.0.0.1:8000")
+def client_for(u):
+    cl = TestClient(app, base_url="http://127.0.0.1:8000")
+    tok = csrf_from(cl.get("/login").text)
+    code = cl.post("/login", data={"username": u, "password": PW, "csrf": tok}, follow_redirects=False).status_code
+    assert code == 303, f"login {u} failed: {code}"
+    return cl, tok
 
-# Test 1: wrong CSRF token on login is rejected
-page = client.get("/login")
-r = client.post("/login", data={"username": "field1", "password": pw, "csrf": "forged"},
-                follow_redirects=False)
-print("1. login with forged CSRF:", r.status_code, "(expect 403)")
 
-# Test 2: field1 can sign in with the right token
-token = csrf_from(client.get("/login").text)
-r = client.post("/login", data={"username": "field1", "password": pw, "csrf": token},
-                follow_redirects=False)
-print("2. field1 login:", r.status_code, "(expect 303)")
+def cleanup(c):
+    sub = "(SELECT id FROM users WHERE username = ANY(:n))"
+    c.execute(text(f"DELETE FROM results WHERE user_id IN {sub}"), {"n": NAMES})
+    c.execute(text(f"DELETE FROM audit_log WHERE user_id IN {sub}"), {"n": NAMES})
+    c.execute(text("DELETE FROM users WHERE username = ANY(:n)"), {"n": NAMES})
 
-# Test 3: field_agent is refused on the analyst page and every query route
-before = spent()
-r = client.get("/analyst")
-print("3a. GET /analyst as field_agent:", r.status_code, "(expect 403)")
-for path, data in [("/engine/preview", {"measure": "count", "group_by": ["region"]}),
-                   ("/engine/run", {"measure": "count", "group_by": ["region"]}),
-                   ("/engine/run", {"measure": "mean", "group_by": ["region"]})]:
-    r = client.post(path, data={**data, "csrf": token})
-    print(f"3b. POST {path} as field_agent:", r.status_code, "(expect 403)")
-print("3c. budget unchanged by refused requests:", spent() == before, "(expect True)")
 
-# Test 4: signed in as field1, a forged CSRF token is still rejected on logout
-r = client.post("/logout", data={"csrf": "forged"}, follow_redirects=False)
-print("4. logout with forged CSRF:", r.status_code, "(expect 403)")
+def make_users():
+    with admin_db.begin() as c:
+        cleanup(c)
+        for u, role in USERS.items():
+            c.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:u, :h, :r)"),
+                      {"u": u, "h": hash_password(PW), "r": role})
+make_users()
+try:
+    client, token = client_for("rl_f")
+    page = TestClient(app, base_url="http://127.0.0.1:8000")
+    r = page.post("/login", data={"username": "rl_f", "password": PW, "csrf": "forged"}, follow_redirects=False)
+    check("login with forged CSRF: 403", r.status_code == 403)
+    before = spent()
+    check("field_agent GET /analyst: 403", client.get("/analyst").status_code == 403)
+    codes = []
+    for path, data in [("/engine/preview", {"measure": "count", "group_by": ["region"]}),
+                       ("/engine/run", {"measure": "count", "group_by": ["region"]}),
+                       ("/engine/run", {"measure": "mean", "group_by": ["region"]}),
+                       ("/engine/needs/preview", {"grouping": "category"}),
+                       ("/engine/needs/run", {"grouping": "category"})]:
+        codes.append(client.post(path, data={**data, "csrf": token}).status_code)
+    check("field_agent refused on every query route (all 403): " + str(codes), all(c == 403 for c in codes))
+    check("budget of dataset 1 unchanged by refused requests", spent() == before)
+    r = client.post("/logout", data={"csrf": "forged"}, follow_redirects=False)
+    check("logout with forged CSRF: 403", r.status_code == 403)
+finally:
+    with admin_db.begin() as c:
+        cleanup(c)
+    print("throwaway accounts removed")
+assert not fails, f"failed: {fails}"
+print("PASS")
