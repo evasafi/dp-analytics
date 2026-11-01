@@ -293,7 +293,7 @@ def engine_run(request: Request, measure: str = Form(...),
 def _load_result(rid: int, user):
     with engine.connect() as c:
         row = c.execute(
-            text("SELECT id, spec, cells FROM results WHERE id = :r AND user_id = :u"),
+            text("SELECT r.id, r.spec, r.cells, a.query_type FROM results r JOIN audit_log a ON a.id = r.audit_id WHERE r.id = :r AND r.user_id = :u"),
             {"r": rid, "u": user.id}).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -311,7 +311,8 @@ def engine_result(request: Request, rid: int, user=Depends(require_role("analyst
     row = _load_result(rid, user)
     rows = [[*k, _show(v)] for k, v in row.cells]
     return render(request, "engine_result.html", user=user, rid=rid, spec=row.spec,
-                  dims=row.spec["group_by"], rows=rows, suppress_below=SUPPRESS_BELOW)
+                  dims=row.spec["group_by"], rows=rows, suppress_below=SUPPRESS_BELOW,
+                  is_needs=(row.query_type == "needs_count"))
 
 
 @app.get("/engine/result/{rid}/csv")
@@ -333,7 +334,7 @@ from fastapi.staticfiles import StaticFiles
 def engine_results(request: Request, user=Depends(require_role("analyst"))):
     with engine.connect() as c:
         rows = c.execute(text(
-            "SELECT r.id, r.ts, r.spec, a.epsilon_charged FROM results r "
+            "SELECT r.id, r.ts, r.spec, a.epsilon_charged, a.query_type FROM results r "
             "JOIN audit_log a ON a.id = r.audit_id WHERE r.user_id = :u "
             "ORDER BY r.id DESC LIMIT 50"), {"u": user.id}).all()
     return render(request, "engine_list.html", user=user, rows=rows)

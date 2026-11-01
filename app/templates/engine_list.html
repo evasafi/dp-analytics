@@ -7,7 +7,7 @@
   <table>
     <tr><th>Time</th><th>Measure</th><th>Group by</th><th>Cost</th><th></th></tr>
     {% for r in rows %}
-    <tr><td>{{ r.ts.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ r.spec.measure }}</td>
+    <tr><td>{{ r.ts.strftime("%Y-%m-%d %H:%M") }}</td><td>{% if r.query_type == 'needs_count' %}needs count{% else %}{{ r.spec.measure }}{% endif %}</td>
         <td>{{ r.spec.group_by|join(", ") or "none" }}</td><td>{{ r.epsilon_charged }}</td>
         <td><a href="/engine/result/{{ r.id }}">open</a> | <a href="/engine/result/{{ r.id }}/csv">csv</a></td></tr>
     {% endfor %}

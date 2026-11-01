@@ -89,6 +89,7 @@ try:
           and after_run[0] - base[0] == Decimal("0.1") and after_run[1] - base[1] == 1
           and after_run[2] - base[2] == 1)
     rid_url = loc
+    check("beneficiary result page is not labelled as needs", "Counts of needs" not in a.get(loc).text)
 
     r1, r2 = a.get(rid_url), a.get(rid_url)
     check("result page: 200 twice, shows regions, refresh spends nothing",

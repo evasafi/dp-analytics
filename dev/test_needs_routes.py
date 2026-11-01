@@ -115,6 +115,8 @@ try:
     with engine.connect() as c:
         qt = c.execute(text("SELECT query_type FROM audit_log WHERE dataset_id=:d"), {"d": DS}).scalar_one()
     check("audit row has query_type needs_count", qt == "needs_count")
+    check("needs result page and past-results list are labelled as needs",
+          "Counts of needs, not people" in a.get(loc).text and "needs count" in a.get("/engine/results").text)
 
     r = a.get(loc)
     check("result page: 200, shows category codes, refresh spends nothing",
