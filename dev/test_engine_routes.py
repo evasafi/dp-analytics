@@ -1,4 +1,4 @@
-﻿import getpass
+import getpass
 import re
 from decimal import Decimal
 from urllib.parse import quote
@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, text
 
 from app.auth import hash_password
 from app.db import engine
+import app.main as main
 from app.main import app
 
 PW = "throwaway-password-1"
@@ -22,11 +23,12 @@ def cleanup(c):
     c.execute(text(f"DELETE FROM results WHERE user_id IN {sub}"), {"n": NAMES})
     c.execute(text(f"DELETE FROM audit_log WHERE user_id IN {sub}"), {"n": NAMES})
     c.execute(text("DELETE FROM users WHERE username = ANY(:n)"), {"n": NAMES})
+    c.execute(text("DELETE FROM datasets WHERE name = 'engine_routes_test'"))
 
 
 def state():
     with engine.connect() as c:
-        return (c.execute(text("SELECT epsilon_spent FROM datasets WHERE id=1")).scalar_one(),
+        return (c.execute(text("SELECT epsilon_spent FROM datasets WHERE id=:d"), {"d": DS}).scalar_one(),
                 c.execute(text("SELECT count(*) FROM audit_log")).scalar_one(),
                 c.execute(text("SELECT count(*) FROM results")).scalar_one())
 
@@ -55,6 +57,8 @@ def client_for(u):
 
 with admin.begin() as c:
     cleanup(c)
+    c.execute(text("INSERT INTO datasets (name, epsilon_total) VALUES ('engine_routes_test', 1.0)"))
+    DS = c.execute(text("SELECT id FROM datasets WHERE name='engine_routes_test'")).scalar_one()
     for u, role in USERS.items():
         c.execute(text("INSERT INTO users (username, password_hash, role) VALUES (:u, :h, :r)"),
                   {"u": u, "h": hash_password(PW), "r": role})
@@ -65,6 +69,11 @@ try:
     f, tf = client_for("engine_f")
     x, tx = client_for("engine_x")
     anon = TestClient(app, base_url="http://127.0.0.1:8000")
+    main.BENEFICIARY_OVERRIDE_ID = DS
+    def real1():
+        with engine.connect() as c:
+            return c.execute(text("SELECT epsilon_spent FROM datasets WHERE id=1")).scalar_one()
+    real_before = real1()
     base = state()
     form = {"measure": "count", "group_by": ["region"]}
 
@@ -118,9 +127,11 @@ try:
 
     r = a.post("/engine/run", data={**form, "csrf": "forged"})
     check("forged CSRF on run: 403, nothing charged", r.status_code == 403 and state() == after_run)
+    check("real beneficiary budget untouched by the whole run", real1() == real_before)
 finally:
     with admin.begin() as c:
         cleanup(c)
+    main.BENEFICIARY_OVERRIDE_ID = None
     print("throwaway accounts and their audit rows and results removed")
 
 assert not fails, f"failed: {fails}"

@@ -106,6 +106,11 @@ from app.queries import (REGIONS, Refused, count_by_region,
                          household_histogram, mean_transfer)
 
 DATASET_ID = 1
+BENEFICIARY_OVERRIDE_ID = None   # tests may set a throwaway id for the engine run route
+
+
+def _engine_dataset_id():
+    return BENEFICIARY_OVERRIDE_ID if BENEFICIARY_OVERRIDE_ID is not None else DATASET_ID
 
 
 def _budget():
@@ -275,7 +280,7 @@ def engine_run(request: Request, measure: str = Form(...),
     try:
         spec = _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band)
         with engine.begin() as conn:
-            res = run_query(conn, user.id, DATASET_ID, spec)
+            res = run_query(conn, user.id, _engine_dataset_id(), spec)
     except BudgetExhausted:
         return _analyst_page(request, user, status_code=409,
                              error="Privacy budget exhausted. No answer was released.")
