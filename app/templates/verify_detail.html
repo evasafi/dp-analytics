@@ -7,22 +7,32 @@
   <table>
     <tr><th>Place</th><td>{{ n.district }}, {{ n.province }}</td></tr>
     <tr><th>Posted</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
-    <tr><th>Status</th><td>{{ n.status }}</td></tr>
+    <tr><th>Status</th><td>{{ status_text }}</td></tr>
+    <tr><th>Goal</th><td>{{ goal }}</td></tr>
+    <tr><th>Household size (private)</th><td>{{ n.household_size }}</td></tr>
     <tr><th>Description (private)</th><td>{{ n.description }}</td></tr>
     <tr><th>Contact (private)</th><td>{{ n.contact_method }}: {{ n.contact }}</td></tr>
+    <tr><th>Account holder (private)</th><td>{{ n.payee_name }}</td></tr>
+    <tr><th>IBAN (private)</th><td>{{ iban }}</td></tr>
+    <tr><th>Requester's earlier needs</th><td>{{ history }}</td></tr>
+    {% if n.withdrawn_reason %}<tr><th>Withdrawn because</th><td>{{ n.withdrawn_reason }}</td></tr>{% endif %}
+    {% if n.review_note %}<tr><th>Review note</th><td>{{ n.review_note }}</td></tr>{% endif %}
   </table>
   {% if n.status == "pending" %}
   <h3>Approve</h3>
-  <p class="note">Write what the public board will show. Do not include names, phone numbers, addresses, links or the contact details above. Text that looks like contact details is refused.</p>
+  <p class="note">Donors will send money straight to the account above, so do both checks yourself, outside the platform, before you approve.</p>
   <form method="post" action="/verify/{{ n.id }}/approve">
     <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label><input type="checkbox" name="check_payee" value="on"{% if payee_ok %} checked{% endif %}> The account holder's name matches the requester's identity.</label><br>
+       <label><input type="checkbox" name="check_document" value="on"{% if document_ok %} checked{% endif %}> I saw the supporting document (invoice, quote or report) and it matches the goal.</label></p>
+    <p class="note">Write what the public board will show. Do not include names, phone numbers, account numbers, addresses, links or the details above. Text that looks like them is refused.</p>
     <p><textarea name="public_text" rows="4" cols="60" maxlength="300" required>{{ draft }}</textarea></p>
     <p><button type="submit">Approve and publish</button></p>
   </form>
   <h3>Reject</h3>
   <form method="post" action="/verify/{{ n.id }}/reject">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p><textarea name="note" rows="3" cols="60" maxlength="500" placeholder="Why? The requester will see this." required></textarea></p>
+    <p><textarea name="note" rows="3" cols="60" maxlength="500" minlength="10" placeholder="Why? The requester will see this (10 to 500 characters)." required></textarea></p>
     <p><button type="submit">Reject</button></p>
   </form>
   {% else %}

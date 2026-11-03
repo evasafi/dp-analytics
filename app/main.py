@@ -219,101 +219,10 @@ from app.routes import needs as needs_routes
 app.include_router(needs_routes.router)
 
 
-# ---------------- verifiers ----------------
-_PHONE_RE = _re.compile(r"(?:\d[\s\-().+]*){7,}")
+from app.routes import verify as verify_routes
 
+app.include_router(verify_routes.router)
 
-def _public_text_problem(public_text: str, contact: str):
-    t = public_text.strip()
-    if not 10 <= len(t) <= 300:
-        return "The public text must be 10 to 300 characters."
-    if "@" in t or "://" in t or "www." in t.lower():
-        return "The public text must not contain an email address or a link."
-    if _PHONE_RE.search(t):
-        return "The public text looks like it contains a phone number. Remove digits that could identify someone."
-    if len(contact) >= 3 and contact.lower() in t.lower():
-        return "The public text contains the requester's contact details."
-    return None
-
-
-def _need_for_review(nid: int):
-    with engine.connect() as c:
-        return c.execute(
-            text("SELECT id, requester_id, category, province, district, description, contact, contact_method, status, created_at "
-                 "FROM needs WHERE id = :i"), {"i": nid}).one_or_none()
-
-
-def _verify_detail(request, user, n, status_code=200, draft=None, error=None):
-    labels = dict(CATEGORIES)
-    default = f"{labels[n.category]} need in {n.district}, {n.province}."
-    return render(request, "verify_detail.html", status_code=status_code, user=user, n=n,
-                  label=labels[n.category], draft=draft if draft is not None else default, error=error)
-
-
-@app.get("/verify")
-def verify_queue(request: Request, done: str = "", user=Depends(require_role("verifier"))):
-    with engine.connect() as c:
-        rows = c.execute(
-            text("SELECT id, created_at, category, province, district, left(description, 140) AS snippet "
-                 "FROM needs WHERE status = 'pending' ORDER BY id LIMIT 50")).all()
-    return render(request, "verify_queue.html", user=user, rows=rows, done=done, labels=dict(CATEGORIES))
-
-
-@app.get("/verify/{nid}")
-def verify_detail(request: Request, nid: int, user=Depends(require_role("verifier"))):
-    n = _need_for_review(nid)
-    if n is None:
-        raise HTTPException(status_code=404, detail="not found")
-    return _verify_detail(request, user, n)
-
-
-@app.post("/verify/{nid}/approve")
-def verify_approve(request: Request, nid: int, public_text: str = Form(...), csrf: str = Form(...),
-                   user=Depends(require_role("verifier"))):
-    check_csrf(request, csrf)
-    n = _need_for_review(nid)
-    if n is None:
-        raise HTTPException(status_code=404, detail="not found")
-    problem = _public_text_problem(public_text, n.contact)
-    if problem:
-        return _verify_detail(request, user, n, status_code=400, draft=public_text, error=problem)
-    with engine.begin() as conn:
-        done = conn.execute(
-            text("UPDATE needs SET status = 'published', public_text = :t, reviewed_by = :v, "
-                 "reviewed_at = now(), review_note = NULL, updated_at = now() "
-                 "WHERE id = :i AND status = 'pending' AND requester_id <> :v RETURNING id"),
-            {"t": public_text.strip(), "v": user.id, "i": nid}).one_or_none()
-        if done is None:
-            return _verify_detail(request, user, n, status_code=409,
-                                  error="This need is no longer pending. Nothing was changed.")
-        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :a, 'approved')"),
-                     {"n": nid, "a": user.id})
-    return RedirectResponse("/verify?done=approved", status_code=303)
-
-
-@app.post("/verify/{nid}/reject")
-def verify_reject(request: Request, nid: int, note: str = Form(...), csrf: str = Form(...),
-                  user=Depends(require_role("verifier"))):
-    check_csrf(request, csrf)
-    n = _need_for_review(nid)
-    if n is None:
-        raise HTTPException(status_code=404, detail="not found")
-    note = note.strip()
-    if not 3 <= len(note) <= 500:
-        return _verify_detail(request, user, n, status_code=400,
-                              error="Write a reason of 3 to 500 characters.")
-    with engine.begin() as conn:
-        done = conn.execute(
-            text("UPDATE needs SET status = 'rejected', reviewed_by = :v, reviewed_at = now(), "
-                 "review_note = :r, updated_at = now() "
-                 "WHERE id = :i AND status = 'pending' AND requester_id <> :v RETURNING id"),
-            {"v": user.id, "r": note, "i": nid}).one_or_none()
-        if done is None:
-            return _verify_detail(request, user, n, status_code=409,
-                                  error="This need is no longer pending. Nothing was changed.")
-        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'rejected', :r)"),
-                     {"n": nid, "a": user.id, "r": note})
-    return RedirectResponse("/verify?done=rejected", status_code=303)
 
 # ---------------- public board ----------------
 import threading
