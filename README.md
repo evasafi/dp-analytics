@@ -89,7 +89,7 @@ foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_v
 }
 ```
 
-`test_dp_statistical` and `test_engine_dp` check the noise statistically. Some older scripts in `dev/` belong to the retired design and have not been rerun on this version, and `dev/README.md` is out of date. `THREAT_MODEL.md` section 5 says which tests count as evidence.
+`test_dp_statistical` and `test_engine_dp` check the noise statistically, and `test_ratelimit` and `test_ratelimit_expiry` check the login lockout (run the second at least five minutes after the first). `dev/README.md` lists every script in the folder, and `THREAT_MODEL.md` section 5 says which tests count as evidence.
 
 ## Queries (analytics)
 
