@@ -93,20 +93,22 @@ def _name_words(s: str) -> set:
     return {w for w in re.findall(r"[^\W\d_]+", s.lower()) if len(w) >= 3}
 
 
-def public_text_problem(public_text: str, contact: str, payee_name: str, username: str):
-    """The text the public board shows must not identify the requester or reveal how to reach them."""
+def public_text_problem(public_text: str, contact: str, payee_name: str, username: str, max_len: int = 300,
+                        what: str = "public text", owner: str = "the requester's"):
+    """Free text that other people will read must not identify the requester or reveal how to reach them.
+    Used for the verifier's public text and for the reason a requester gives when withdrawing a need."""
     t = public_text.strip()
-    if not 10 <= len(t) <= 300:
-        return "The public text must be 10 to 300 characters."
+    if not 10 <= len(t) <= max_len:
+        return f"The {what} must be 10 to {max_len} characters."
     low = t.lower()
     if "@" in t or "://" in t or "www." in low:
-        return "The public text must not contain an email address or a link."
+        return f"The {what} must not contain an email address or a link."
     if _PHONE_LIKE.search(t):
-        return "The public text looks like it contains a phone number or an account number. Remove digits that could identify someone."
+        return f"The {what} looks like it contains a phone number or an account number. Remove digits that could identify someone."
     if len(contact) >= 3 and contact.lower() in low:
-        return "The public text contains the requester's contact details."
+        return f"The {what} contains {owner} contact details."
     if _name_words(payee_name) & _name_words(t):
-        return "The public text contains part of the account holder's name. Do not name anyone."
+        return f"The {what} contains part of the account holder's name. Do not name anyone."
     if len(username) >= 3 and username.lower() in low:
-        return "The public text contains the requester's username."
+        return f"The {what} contains {owner} username."
     return None
