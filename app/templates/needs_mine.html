@@ -22,6 +22,7 @@
         <details{% if open_id == r.id %} open{% endif %}><summary>Withdraw this need</summary>
           <form method="post" action="/needs/{{ r.id }}/withdraw">
             <input type="hidden" name="csrf" value="{{ csrf }}">
+            <p class="note">Donors who pledged to this need will see your reason. Do not write names, phone numbers or other personal details.</p>
             <label>Reason (10 to 500 characters)<br><textarea name="reason" rows="3" cols="50" minlength="10" maxlength="500" required>{% if open_id == r.id %}{{ reason }}{% endif %}</textarea></label>
             <p class="note">Money donors have already sent is between them and you. The platform does not refund it.</p>
             <button type="submit">Withdraw</button>

@@ -10,7 +10,7 @@ from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCES
 from app.reference import (EVENTS, MAX_PENDING, MEDICAL_LOCATIONS, PURPOSES, STATUS_TEXT, load_limits, money,
                            need_label)
-from app.validation import need_problems, normalize_iban
+from app.validation import need_problems, normalize_iban, public_text_problem
 from app.web import check_csrf, render
 
 router = APIRouter()
@@ -179,7 +179,7 @@ def need_withdraw(request: Request, nid: int, reason: str = Form(""), csrf: str 
     check_csrf(request, csrf)
     reason = reason.strip()
     with engine.connect() as c:
-        row = c.execute(text("SELECT status FROM needs WHERE id = :n AND requester_id = :u"),
+        row = c.execute(text("SELECT status, contact, payee_name FROM needs WHERE id = :n AND requester_id = :u"),
                         {"n": nid, "u": user.id}).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -187,6 +187,10 @@ def need_withdraw(request: Request, nid: int, reason: str = Form(""), csrf: str 
         return _mine_page(request, user, 409, error="This need can no longer be withdrawn.")
     if not 10 <= len(reason) <= 500:
         return _mine_page(request, user, 400, error="Give a reason of 10 to 500 characters. A need cannot be withdrawn without one.",
+                          open_id=nid, reason=reason)
+    problem = public_text_problem(reason, row.contact, row.payee_name, user.username, max_len=500, what="reason", owner="your")
+    if problem:
+        return _mine_page(request, user, 400, error=problem + " Donors who pledged to this need will read it. Nothing was changed.",
                           open_id=nid, reason=reason)
     with engine.begin() as conn:
         changed = conn.execute(
