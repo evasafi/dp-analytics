@@ -5,6 +5,7 @@ The pledge trigger in schema.sql enforces the floor, the goal cap and the limit 
 the checks here only give readable messages. The account holder and IBAN are shown only to the supporter who
 pledged, and only while the pledge is open (pledged, sent or disputed).
 """
+import math
 import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -29,12 +30,26 @@ SHOW_ACCOUNT = ("pledged", "sent", "disputed")
 
 def _settings():
     with engine.connect() as c:
-        return c.execute(text("SELECT eur_try_rate, pledge_floor, pledge_expiry_days, max_unconfirmed_pledges FROM settings")).one()
+        return c.execute(text("SELECT eur_try_rate, pledge_floor, pledge_expiry_days, max_unconfirmed_pledges, "
+                              "suggestion_min_needs FROM settings")).one()
 
 
 def _open_need(nid: int):
     with engine.connect() as c:
-        return c.execute(text(f"SELECT {COLUMNS} FROM public_needs WHERE id = :i"), {"i": nid}).one_or_none()
+        return c.execute(text(f"SELECT {COLUMNS}, band FROM public_needs WHERE id = :i"), {"i": nid}).one_or_none()
+
+
+def _suggestion(n, s, open_try: int):
+    """The open amount divided by the average number of donors of finished lira needs in the same goal band, rounded
+    up to 10 lira, between the floor and the open amount. None for euro needs and for bands with too few finished needs."""
+    if n.band is None or open_try < s.pledge_floor:
+        return None
+    with engine.connect() as c:
+        st = c.execute(text("SELECT finished_needs, avg_donors FROM suggestion_stats WHERE band = :b"), {"b": n.band}).one_or_none()
+    if st is None or st.finished_needs < s.suggestion_min_needs or not st.avg_donors:
+        return None
+    amount = min(max(math.ceil(open_try / st.avg_donors / 10) * 10, s.pledge_floor), open_try)
+    return {"amount": amount, "avg_donors": f"{st.avg_donors:.1f}", "finished": st.finished_needs}
 
 
 def _open_try(n, s) -> int:
@@ -44,7 +59,9 @@ def _open_try(n, s) -> int:
 
 
 def _pledge_page(request, user, n, s, status_code=200, error=None, form=None):
-    return render(request, "pledge_form.html", status_code=status_code, user=user, c=_card(n), open_try=_open_try(n, s),
+    open_try = _open_try(n, s)
+    return render(request, "pledge_form.html", status_code=status_code, user=user, c=_card(n), open_try=open_try,
+                  suggestion=_suggestion(n, s, open_try),
                   floor=s.pledge_floor, days=s.pledge_expiry_days, rate=f"{s.eur_try_rate:.0f}", error=error, form=form or {})
 
 
