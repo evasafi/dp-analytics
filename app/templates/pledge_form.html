@@ -1,28 +1,40 @@
 {% extends "base.html" %}
+{% from "_ledger.html" import ledger %}
 {% block title %}Pledge{% endblock %}
 {% block content %}
   {% set f = form or {} %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/support">Back</a></p>
-  <h3>Pledge to this need</h3>
-  <table>
-    <tr><th>Category</th><td>{{ label }}</td></tr>
-    <tr><th>Place</th><td>{{ n.district }}, {{ n.province }}</td></tr>
-    <tr><th>Posted</th><td>{{ n.month }}</td></tr>
-    <tr><th>What is needed</th><td>{{ n.public_text }}</td></tr>
-  </table>
-  <p class="note">A verifier arranges the handover, so the requester never sees your details and you never see theirs. Your contact is shown only to verifiers. No money moves through AidBridge.</p>
+  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/support">My pledges</a> | <a href="/board">Public board</a></p>
+  <h3>Pledge to: {{ c.label }} in {{ c.place }}{% if c.event %} ({{ c.event }}){% endif %}</h3>
+  <p class="note">Posted {{ c.month }}. Goal {{ c.goal }}{% if c.euro %}, at the placeholder rate of 1 euro = {{ rate }} lira{% endif %}.</p>
+  {{ ledger(c) }}
+  <p>{{ c.funding }}</p>
+  <p>{{ c.text }}</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <form method="post" action="/support/pledge/{{ n.id }}">
+  {% if open_try < floor %}
+  <p><strong>This need is fully pledged for now.</strong> If a pledge expires or is cancelled, the amount opens again.</p>
+  {% else %}
+  <p>Still open: {% if c.euro %}about {% endif %}<strong>{{ "{:,}".format(open_try) }} TRY</strong>. The smallest pledge is {{ floor }} lira.</p>
+  <form method="post" action="/support/pledge/{{ c.id }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p><label>How a verifier can reach you
+    <p><label>Amount in lira (whole number)
+      <input name="amount" inputmode="numeric" pattern="[0-9]*" value="{{ f.get('amount', '') }}" required></label></p>
+    <p><label>How a verifier can reach you if there is a problem with this pledge
       <select name="contact_method" id="contact_method">
         <option value="phone"{% if f.get('contact_method') == 'phone' %} selected{% endif %}>Phone number</option>
         <option value="email"{% if f.get('contact_method') == 'email' %} selected{% endif %}>Email address</option>
         <option value="whatsapp"{% if f.get('contact_method') == 'whatsapp' %} selected{% endif %}>WhatsApp number</option>
-        <option value="other"{% if f.get('contact_method') == 'other' %} selected{% endif %}>Other</option>
+        <option value="other"{% if f.get('contact_method', 'other') == 'other' %} selected{% endif %}>Other</option>
       </select></label>
       <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
-    <p><button type="submit">Pledge to help</button></p>
+    <p class="note">Your contact is shown only to verifiers, never to the requester or on the board.</p>
+    <h3>Before you pledge</h3>
+    <ul>
+      <li>After you pledge you see the account holder and IBAN. You send the money yourself, straight to that account. This site never holds it.</li>
+      <li>Mark the pledge as sent once you have sent it. If you do not, it expires after {{ days }} days and the amount opens again.</li>
+      <li>The requester can withdraw the need, with a reason. Money already sent is between you and the requester: this site cannot refund it.</li>
+    </ul>
+    <p><label><input type="checkbox" name="ack"{% if f.get('ack') %} checked{% endif %}> I have read this and accept it.</label></p>
+    <p><button type="submit">Pledge</button></p>
   </form>
   <script>
     (function () {
@@ -34,4 +46,5 @@
       update();
     })();
   </script>
+  {% endif %}
 {% endblock %}
