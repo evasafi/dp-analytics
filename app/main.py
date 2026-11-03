@@ -53,7 +53,7 @@ def root(request: Request):
         user = current_user(request)
     except HTTPException:
         return RedirectResponse("/login", status_code=303)
-    home = {"analyst": "/analyst", "field_agent": "/field", "admin": "/admin", "requester": "/needs/mine", "verifier": "/verify", "supporter": "/support"}
+    home = {"analyst": "/analyst", "admin": "/admin", "requester": "/needs/mine", "verifier": "/verify", "supporter": "/support"}
     return RedirectResponse(home.get(user.role, "/me"), status_code=303)
 
 
@@ -102,33 +102,16 @@ from sqlalchemy import text
 from app.auth import require_role
 from app.budget import BudgetExhausted
 from app.db import engine
-from app.queries import (REGIONS, Refused, count_by_region,
-                         household_histogram, mean_transfer)
-
-DATASET_ID = 1
-BENEFICIARY_OVERRIDE_ID = None   # tests may set a throwaway id for the engine run route
-
-
-def _engine_dataset_id():
-    return BENEFICIARY_OVERRIDE_ID if BENEFICIARY_OVERRIDE_ID is not None else DATASET_ID
-
-
-def _budget():
+def _budgets():
+    """Both analytics budgets, for the admin and analyst pages."""
     with engine.connect() as c:
-        row = c.execute(
-            text("SELECT epsilon_total, epsilon_spent FROM datasets WHERE id = :d"),
-            {"d": DATASET_ID},
-        ).one()
-    return {"total": row.epsilon_total, "spent": row.epsilon_spent,
-            "remaining": row.epsilon_total - row.epsilon_spent}
+        rows = c.execute(text("SELECT name, epsilon_total, epsilon_spent FROM datasets ORDER BY id")).all()
+    return [{"name": r.name, "total": r.epsilon_total, "spent": r.epsilon_spent,
+             "remaining": r.epsilon_total - r.epsilon_spent} for r in rows]
 
 
 def _analyst_page(request: Request, user, status_code: int = 200, **ctx):
-    costs = {"count": settings.epsilon_per_count,
-             "histogram": settings.epsilon_per_histogram,
-             "mean": settings.epsilon_per_mean}
-    return render(request, "analyst.html", status_code=status_code, user=user,
-                  budget=_budget(), needs_budget=_needs_budget(), needs_cost=settings.epsilon_per_count, regions=REGIONS, costs=costs, **ctx)
+    return render(request, "analyst.html", status_code=status_code, user=user, budgets=_budgets(), **ctx)
 
 
 @app.get("/analyst")
@@ -136,71 +119,10 @@ def analyst_page(request: Request, user=Depends(require_role("analyst"))):
     return _analyst_page(request, user)
 
 
-# ---------------- field agent routes ----------------
 import json
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.exc import IntegrityError
-
-
-def _valid_submission(region, household_size, transfer_text):
-    """Return the transfer as a Decimal if everything is valid, else None."""
-    try:
-        transfer = Decimal(transfer_text).quantize(Decimal("0.01"))
-    except InvalidOperation:
-        return None
-    if not transfer.is_finite():
-        return None
-    if region not in REGIONS or not 1 <= household_size <= 12:
-        return None
-    if not Decimal(0) <= transfer <= Decimal(500):
-        return None
-    return transfer
-
-
-@app.get("/field")
-def field_page(request: Request, done: int = 0,
-               user=Depends(require_role("field_agent"))):
-    return render(request, "field.html", user=user, done=bool(done), regions=REGIONS)
-
-
-@app.post("/field/submit")
-def field_submit(request: Request, region: str = Form(...),
-                 household_size: int = Form(...), monthly_transfer: str = Form(...),
-                 csrf: str = Form(...), user=Depends(require_role("field_agent"))):
-    check_csrf(request, csrf)
-    transfer = _valid_submission(region, household_size, monthly_transfer)
-    if transfer is None:
-        return render(request, "field.html", status_code=400, user=user, done=False,
-                      regions=REGIONS, error="Invalid values. Nothing was saved.")
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7000000 + user.id})
-            used = conn.execute(
-                text("SELECT count(*) FROM audit_log WHERE user_id = :u AND "
-                     "query_type = 'submit' AND ts > now() - interval '24 hours'"),
-                {"u": user.id}).scalar_one()
-            if used >= settings.field_daily_cap:
-                return render(request, "field.html", status_code=429, user=user, done=False,
-                              regions=REGIONS,
-                              error="Daily submission limit reached. Nothing was saved.")
-            conn.execute(
-                text("INSERT INTO beneficiaries (dataset_id, beneficiary_id, region, "
-                     "household_size, monthly_transfer) VALUES (:d, :b, :r, :h, :t)"),
-                {"d": DATASET_ID, "b": secrets.token_hex(8), "r": region,
-                 "h": household_size, "t": transfer},
-            )
-            conn.execute(
-                text("INSERT INTO audit_log (user_id, dataset_id, query_type, params, "
-                     "epsilon_charged, result_hash) VALUES "
-                     "(:u, :d, 'submit', CAST(:p AS jsonb), 0, 'n/a')"),
-                {"u": user.id, "d": DATASET_ID, "p": json.dumps({})},
-            )
-    except IntegrityError:
-        return render(request, "field.html", status_code=500, user=user, done=False,
-                      regions=REGIONS, error="Could not save. Please try again.")
-    return RedirectResponse("/field?done=1", status_code=303)
-
 
 # ---------------- admin routes ----------------
 @app.get("/admin")
@@ -210,85 +132,17 @@ def admin_page(request: Request, user=Depends(require_role("admin"))):
             "SELECT a.ts, u.username, a.query_type, a.params, a.epsilon_charged, "
             "a.result_hash FROM audit_log a JOIN users u ON u.id = a.user_id "
             "ORDER BY a.id DESC LIMIT 50")).all()
-    return render(request, "admin.html", user=user, budget=_budget(), rows=rows)
+    return render(request, "admin.html", user=user, budgets=_budgets(), rows=rows)
 
 
 
-# ---------------- engine routes ----------------
+# ---------------- engine results ----------------
 import csv
 import io
 
 from fastapi.responses import Response
 
-from app.engine import Spec, validate
-from app.engine_noise import SUPPRESS_BELOW, estimate
-from app.engine_run import run_query
-
-
-def _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band):
-    filters = []
-    if f_region:
-        filters.append(("region", tuple(f_region)))
-    if f_household_size:
-        filters.append(("household_size", tuple(int(v) for v in f_household_size)))
-    if f_transfer_band:
-        filters.append(("transfer_band", tuple(int(v) for v in f_transfer_band)))
-    group_by = [g for g in group_by if g]   # blank dropdowns mean no grouping
-    spec = Spec(measure, tuple(group_by), tuple(filters))
-    validate(spec)
-    return spec
-
-
-def _fields(measure, group_by, f_region, f_household_size, f_transfer_band):
-    out = [("measure", measure)]
-    out += [("group_by", g) for g in group_by]
-    out += [("f_region", v) for v in f_region]
-    out += [("f_household_size", v) for v in f_household_size]
-    out += [("f_transfer_band", v) for v in f_transfer_band]
-    return out
-
-
-@app.post("/engine/preview")
-def engine_preview(request: Request, measure: str = Form(...),
-                   group_by: list[str] = Form(default=[]),
-                   f_region: list[str] = Form(default=[]),
-                   f_household_size: list[str] = Form(default=[]),
-                   f_transfer_band: list[str] = Form(default=[]),
-                   csrf: str = Form(...), user=Depends(require_role("analyst"))):
-    check_csrf(request, csrf)
-    try:
-        spec = _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band)
-    except ValueError:
-        return _analyst_page(request, user, status_code=400,
-                             error="Invalid query. Nothing was charged.")
-    est = estimate(spec)
-    budget = _budget()
-    after = budget["remaining"] - Decimal(str(est["epsilon"]))
-    return render(request, "engine_preview.html", user=user, est=est,
-                  remaining=budget["remaining"], after=after,
-                  fields=_fields(measure, group_by, f_region, f_household_size, f_transfer_band))
-
-
-@app.post("/engine/run")
-def engine_run(request: Request, measure: str = Form(...),
-               group_by: list[str] = Form(default=[]),
-               f_region: list[str] = Form(default=[]),
-               f_household_size: list[str] = Form(default=[]),
-               f_transfer_band: list[str] = Form(default=[]),
-               csrf: str = Form(...), user=Depends(require_role("analyst"))):
-    check_csrf(request, csrf)
-    try:
-        spec = _build_spec(measure, group_by, f_region, f_household_size, f_transfer_band)
-        with engine.begin() as conn:
-            res = run_query(conn, user.id, _engine_dataset_id(), spec)
-    except BudgetExhausted:
-        return _analyst_page(request, user, status_code=409,
-                             error="Privacy budget exhausted. No answer was released.")
-    except ValueError:
-        return _analyst_page(request, user, status_code=400,
-                             error="Invalid query. Nothing was charged.")
-    return RedirectResponse(f"/engine/result/{res['result_id']}", status_code=303)
-
+from app.engine_noise import SUPPRESS_BELOW
 
 def _load_result(rid: int, user):
     with engine.connect() as c:
@@ -339,70 +193,6 @@ def engine_results(request: Request, user=Depends(require_role("analyst"))):
             "ORDER BY r.id DESC LIMIT 50"), {"u": user.id}).all()
     return render(request, "engine_list.html", user=user, rows=rows)
 
-
-# ---------------- needs analytics (the needs_synthetic dataset) ----------------
-from app import needs_engine as ne
-
-NEEDS_DATASET_ID = None   # tests may set a throwaway id; otherwise it is looked up by name
-
-
-def _needs_id():
-    return NEEDS_DATASET_ID if NEEDS_DATASET_ID is not None else ne.needs_dataset_id()
-NEEDS_GROUPINGS = {"category": ("category",), "province": ("province",),
-                   "status": ("status",), "category_status": ("category", "status")}
-
-
-def _needs_budget():
-    with engine.connect() as c:
-        row = c.execute(
-            text("SELECT epsilon_total, epsilon_spent FROM datasets WHERE id = :d"),
-            {"d": _needs_id()},
-        ).one()
-    return {"total": row.epsilon_total, "spent": row.epsilon_spent,
-            "remaining": row.epsilon_total - row.epsilon_spent}
-
-
-def _needs_spec(grouping):
-    g = NEEDS_GROUPINGS.get(grouping)
-    if g is None:
-        raise ValueError("unknown grouping")
-    spec = Spec("count", g)
-    ne.validate_needs(spec, _needs_id())
-    return spec
-
-
-@app.post("/engine/needs/preview")
-def engine_needs_preview(request: Request, grouping: str = Form(...),
-                         csrf: str = Form(...), user=Depends(require_role("analyst"))):
-    check_csrf(request, csrf)
-    try:
-        spec = _needs_spec(grouping)
-    except ValueError:
-        return _analyst_page(request, user, status_code=400,
-                             error="Invalid query. Nothing was charged.")
-    est = ne.estimate(spec, _needs_id())
-    budget = _needs_budget()
-    after = budget["remaining"] - Decimal(str(est["epsilon"]))
-    return render(request, "engine_preview.html", user=user, est=est,
-                  remaining=budget["remaining"], after=after,
-                  run_action="/engine/needs/run", fields=[("grouping", grouping)])
-
-
-@app.post("/engine/needs/run")
-def engine_needs_run(request: Request, grouping: str = Form(...),
-                     csrf: str = Form(...), user=Depends(require_role("analyst"))):
-    check_csrf(request, csrf)
-    try:
-        spec = _needs_spec(grouping)
-        with engine.begin() as conn:
-            res = ne.run_needs_query(conn, user.id, _needs_id(), spec)
-    except BudgetExhausted:
-        return _analyst_page(request, user, status_code=409,
-                             error="Privacy budget exhausted. No answer was released.")
-    except ValueError:
-        return _analyst_page(request, user, status_code=400,
-                             error="Invalid query. Nothing was charged.")
-    return RedirectResponse(f"/engine/result/{res['result_id']}", status_code=303)
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 

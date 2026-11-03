@@ -1,9 +1,8 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Admin{% endblock %}
 {% block content %}
   <p>Signed in as <strong>{{ user.username }}</strong> (admin).</p>
-  <p>Privacy budget: spent <strong>{{ "%.1f"|format(budget.spent) }}</strong> of
-     {{ "%.1f"|format(budget.total) }} ({{ "%.1f"|format(budget.remaining) }} remaining).</p>
+  {% for b in budgets %}<p>Privacy budget, {{ b.name }}: spent <strong>{{ "%.1f"|format(b.spent) }}</strong> of {{ "%.1f"|format(b.total) }} ({{ "%.1f"|format(b.remaining) }} remaining).</p>{% endfor %}
 
   <h3>Audit log (latest 50)</h3>
   <table border="1" cellpadding="4">
