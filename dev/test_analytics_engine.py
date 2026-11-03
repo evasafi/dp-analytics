@@ -213,23 +213,28 @@ try:
 
     # ---- D. two analysts spending one budget at once (the budget allows exactly 5 runs)
     new_dataset("an_test_race", 5)
-    barrier, lock, out = threading.Barrier(20), threading.Lock(), []
+    barrier, lock, out, by = threading.Barrier(20), threading.Lock(), [], []
 
     def worker(i):
+        who = "ae_an1" if i % 2 else "ae_an2"
         barrier.wait(timeout=30)
         try:
             with engine.begin() as conn:
-                ne.run_needs_query(conn, uid["ae_an1" if i % 2 else "ae_an2"], "an_test_race", Spec("count", ("status",)))
+                ne.run_needs_query(conn, uid[who], "an_test_race", Spec("count", ("status",)))
             r = "ok"
         except BudgetExhausted:
             r = "refused"
         with lock:
             out.append(r)
+            by.append((who, r))
 
     ts = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
     [t.start() for t in ts]
     [t.join() for t in ts]
     rid = one("SELECT id FROM datasets WHERE name = 'an_test_race'")
+    answered = {u: sum(1 for w, r in by if w == u and r == "ok") for u in ("ae_an1", "ae_an2")}
+    audited = {u: one("SELECT count(*) FROM audit_log WHERE dataset_id = :d AND user_id = :u", d=rid, u=uid[u]) for u in answered}
+    check(f"per analyst, audit rows equal answered runs: answered {answered}, audited {audited}", audited == answered)
     check(f"20 simultaneous runs by two analysts on a budget for 5: {out.count('ok')} answered, {out.count('refused')} refused",
           out.count("ok") == 5 and out.count("refused") == 15)
     check("the budget is spent exactly, never more, with 5 audit rows",
