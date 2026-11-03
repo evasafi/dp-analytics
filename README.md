@@ -54,7 +54,7 @@ Not built:
 1. `python -m venv .venv`, activate it, then `pip install -r requirements.txt`
 2. In `psql` as `postgres` (on Windows `psql` is usually not on PATH; use the full path, for example `& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost`), create the app role and database:
    `CREATE ROLE dp_app LOGIN PASSWORD 'choose-a-password';` and `CREATE DATABASE dp_analytics OWNER postgres;`
-3. Apply the schema as `postgres`: `psql -U postgres -h localhost -d dp_analytics -f schema.sql`. This one file creates everything. Do not run any other `.sql` file in the repository.
+3. Apply the schema as `postgres`: `psql -U postgres -h localhost -d dp_analytics -f schema.sql`. This one file creates everything.
 4. Copy `.env.example` to `.env`. Set `DP_DATABASE_URL` to use your `dp_app` password, and set `DP_SECRET_KEY` to the output of
    `python -c "import secrets; print(secrets.token_hex(32))"`. Copy the `DP_DATABASE_URL` password exactly, then check it without printing it: `python -c "from sqlalchemy.engine import make_url; from app.config import settings; u=make_url(settings.database_url); print(u.username, u.database, len(u.password or ''))"` (compare the length with the real password).
 5. Seed the accounts and data:

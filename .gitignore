@@ -10,3 +10,4 @@ cleanup_tests.py
 cleanup_cap.py
 cleanup_engine.py
 app/static/geo/
+.claude/
