@@ -65,7 +65,7 @@ Not built:
 6. Optional, for the map outlines: see "Boundary data" below. Without the file the board keeps working and the map area says it is unavailable.
 7. Run: `uvicorn app.main:app --reload`, then type `127.0.0.1:8000/board` or `127.0.0.1:8000/login` into the browser. Do not follow a link into the app, because the session cookie is SameSite=Strict.
 
-This version has not been run from a clean clone. The last clean-clone run was for the earlier design.
+This version was run from a clean clone on 4 November 2026: steps 1, 3, 4, 5 and 7 above, then the twelve tests, all passing (see `THREAT_MODEL.md`, section 5). Creating the `dp_app` role (step 2) and rebuilding the map outlines were not part of that run.
 
 ## Boundary data
 
