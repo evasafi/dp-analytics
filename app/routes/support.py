@@ -71,7 +71,8 @@ def _support_page(request, user, status_code=200, done="", error=None):
     with engine.connect() as c:
         rows = c.execute(text(
             "SELECT p.id, p.status, p.amount_try, p.amount_need, p.created_at, p.expires_at, n.id AS nid, n.purpose, "
-            "n.medical_location, n.province, n.district, n.currency, n.status AS nstatus, n.payee_name, n.payee_details "
+            "n.medical_location, n.province, n.district, n.currency, n.status AS nstatus, n.payee_name, n.payee_details, "
+            "n.withdrawn_reason "
             "FROM pledges p JOIN needs n ON n.id = p.need_id WHERE p.supporter_id = :u ORDER BY p.id DESC"), {"u": user.id}).all()
     shown = []
     for r in rows:
@@ -82,6 +83,7 @@ def _support_page(request, user, status_code=200, done="", error=None):
                       "status": PLEDGE_TEXT[r.status], "pledged": r.status == "pledged",
                       "expires": r.expires_at.strftime("%Y-%m-%d %H:%M") if r.status == "pledged" else None,
                       "need_status": STATUS_TEXT[r.nstatus] if r.nstatus != "published" else None,
+                      "withdrawn_reason": r.withdrawn_reason if r.nstatus == "withdrawn" else None,
                       "payee": r.payee_name if account else None,
                       "iban": " ".join(r.payee_details[i:i + 4] for i in range(0, len(r.payee_details), 4)) if account else None})
     unconfirmed = sum(1 for r in rows if r.status in SHOW_ACCOUNT)
