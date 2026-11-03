@@ -228,7 +228,7 @@ Checked in a browser, not by a test (on this branch, by the author): the analyst
 
 Not yet checked in a browser on this branch: the public board and need pages, the map, the pledge form with the suggested amount, my pledges, the requester's receipt buttons, the verifier's queue and pledge pages, and the analytics result pages. The interface has not been restyled, and it has not been looked at on a phone.
 
-Not run from a clean clone: this version. The last clean-clone run was for the earlier design.
+Run from a clean clone on 4 November 2026: the pushed branch at commit `0fda238` was cloned from GitHub into a new folder, installed from `requirements.txt` into a new virtual environment, built into a new database from `schema.sql`, and seeded with the four seed scripts, which reproduced the same figures as the working database (20,194 synthetic needs from 12,000 people; 54 fulfilled, 6 published, 2 pending and 1 withdrawn demo needs; 719 confirmed, 16 sent, 15 pledged and 2 cancelled pledges). The twelve tests listed above then all passed there with the same counts. A started server answered the login, sign-up, board, need and map-data pages, refused an unknown filter with 400, and refused anonymous requests to the requester, verifier and admin pages with 401. Not covered by that run: creating the `dp_app` role (it already existed on the test machine), rebuilding the map outlines from the dataset (the outline file is not committed, so the board answered without it), the browser checks, and the older scripts in section 5 that were run separately.
 
 ## 6. Reproducing
 
