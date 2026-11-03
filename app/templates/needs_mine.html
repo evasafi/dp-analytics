@@ -3,14 +3,31 @@
 {% block content %}
   <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/new">Post a need</a></p>
   {% if done %}<p><strong>Submitted. A verifier will review it.</strong></p>{% endif %}
+  {% if withdrawn %}<p><strong>Withdrawn. The need is off the board.</strong></p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <h3>My needs</h3>
   {% if not rows %}<p>You have not posted a need yet.</p>{% else %}
   <table>
-    <tr><th>Posted</th><th>Category</th><th>Place</th><th>Status</th><th>Details</th></tr>
+    <tr><th>Posted</th><th>For</th><th>Place</th><th>Goal</th><th>Status</th><th>Details</th></tr>
     {% for r in rows %}
-    <tr><td>{{ r.created_at.strftime("%Y-%m-%d") }}</td><td>{{ r.category }}</td>
-        <td>{{ r.district }}, {{ r.province }}</td><td>{{ r.status }}</td>
-        <td>{{ r.description }}{% if r.review_note %}<br><em>Verifier note: {{ r.review_note }}</em>{% endif %}</td></tr>
+    <tr>
+      <td>{{ r.created }}</td><td>{{ r.label }}</td><td>{{ r.place }}</td><td>{{ r.goal }}</td>
+      <td>{{ r.status }}{% if r.funding %}<br>{{ r.funding }}{% endif %}</td>
+      <td>{{ r.description }}
+        {% if r.review_note %}<br><em>Verifier note: {{ r.review_note }}</em>{% endif %}
+        {% if r.withdrawn_reason %}<br><em>You withdrew this need: {{ r.withdrawn_reason }}</em>{% endif %}
+        {% if r.can_withdraw %}
+        <details{% if open_id == r.id %} open{% endif %}><summary>Withdraw this need</summary>
+          <form method="post" action="/needs/{{ r.id }}/withdraw">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <label>Reason (10 to 500 characters)<br><textarea name="reason" rows="3" cols="50" minlength="10" maxlength="500" required>{% if open_id == r.id %}{{ reason }}{% endif %}</textarea></label>
+            <p class="note">Money donors have already sent is between them and you. The platform does not refund it.</p>
+            <button type="submit">Withdraw</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
     {% endfor %}
   </table>
   {% endif %}

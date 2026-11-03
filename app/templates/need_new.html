@@ -6,13 +6,36 @@
   {% set sel_dist = f.get('district') or '' %}
   <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/mine">My needs</a></p>
   <h3>Post a need</h3>
-  <p class="note">A verifier reviews every need before anything is public. Your description and contact details are seen only by verifiers. The public board will show a short text the verifier approves, with your district and no name.</p>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <p class="note">A verifier reviews every need before anything is public. Your description, household size, contact and account details are seen only by verifiers. Donors see the account details only after they pledge. The public board shows a short text the verifier approves, with your district and no name.</p>
+  {% if errors %}<div class="error"><p><strong>Nothing was saved.</strong> Fix these and try again:</p><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   <form method="post" action="/needs/new">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p><label>Category <select name="category">{% for key, label in categories %}<option value="{{ key }}"{% if f.get('category') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></p>
+    <p><label>What is the money for?
+      <select name="purpose" id="purpose" required>
+        <option value="">Choose one</option>
+        {% for key, label in purposes %}<option value="{{ key }}"{% if f.get('purpose') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label></p>
+    <fieldset id="medical-box"{% if f.get('purpose') != 'medical' %} hidden{% endif %}>
+      <legend>Where will the treatment take place?</legend>
+      <label><input type="radio" name="medical_location" value="turkey"{% if f.get('medical_location') != 'abroad' %} checked{% endif %}> In Turkey (goal in lira)</label>
+      <label><input type="radio" name="medical_location" value="abroad"{% if f.get('medical_location') == 'abroad' %} checked{% endif %}> Abroad (goal in euros)</label>
+    </fieldset>
+    <p id="event-box"{% if f.get('purpose') != 'disaster_recovery' %} hidden{% endif %}><label>Which event?
+      <select name="event">
+        <option value="">Choose one</option>
+        {% for key, label in events %}<option value="{{ key }}"{% if f.get('event') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label></p>
     <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option value="{{ name }}"{% if name == sel_prov %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
        <label>District <select name="district" id="district">{% for d in districts_by_province[sel_prov] %}<option value="{{ d }}"{% if d == sel_dist %} selected{% endif %}>{{ d }}</option>{% endfor %}</select></label></p>
+    <p><label>People in your household
+      <select name="household_size" required>
+        <option value="">Choose</option>
+        {% for i in range(1, 13) %}<option value="{{ i }}"{% if f.get('household_size') == i|string %} selected{% endif %}>{{ i }}</option>{% endfor %}
+      </select></label>
+      <span class="note">Private. It is never shown on the board.</span></p>
+    <p><label>Amount you need <span id="currency-label">(lira)</span>
+      <input name="goal" id="goal" type="number" min="100" step="1" inputmode="numeric" value="{{ f.get('goal', '') }}" required></label><br>
+      <span class="note" id="goal-hint"></span></p>
     <p><label>What is needed (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" minlength="10" maxlength="1000" required>{{ f.get('description', '') }}</textarea></label></p>
     <p><label>How a verifier can reach you
       <select name="contact_method" id="contact_method">
@@ -22,11 +45,18 @@
         <option value="other"{% if f.get('contact_method') == 'other' %} selected{% endif %}>Other</option>
       </select></label>
     <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
+    <fieldset>
+      <legend>Where donors send the money</legend>
+      <p><label>Account holder name <input name="payee_name" maxlength="100" value="{{ f.get('payee_name', '') }}" required></label></p>
+      <p><label>IBAN <input name="iban" maxlength="40" placeholder="TR00 0000 0000 0000 0000 0000 00" value="{{ f.get('iban', '') }}" required></label></p>
+      <p class="note">Donors send money straight to this account after they pledge. You cannot change it after posting: to correct a mistake, withdraw the need with a reason and post it again. A verifier checks that the account is yours.</p>
+    </fieldset>
     <p><button type="submit">Submit for review</button></p>
   </form>
   <hr>
   <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
   <script type="application/json" id="districts-data">{{ districts_by_province|tojson }}</script>
+  <script type="application/json" id="limits-data">{{ limits|tojson }}</script>
   <script>
     (function () {
       var data = JSON.parse(document.getElementById('districts-data').textContent);
@@ -54,6 +84,26 @@
                    whatsapp: ['tel', '+90 5xx xxx xx xx'], other: ['text', 'Say how a verifier can reach you']};
       function update() { var h = hints[sel.value]; box.type = h[0]; box.placeholder = h[1]; }
       sel.addEventListener('change', update);
+      update();
+    })();
+  </script>
+  <script>
+    (function () {
+      var limits = JSON.parse(document.getElementById('limits-data').textContent);
+      var purpose = document.getElementById('purpose');
+      var med = document.getElementById('medical-box'), ev = document.getElementById('event-box');
+      var cur = document.getElementById('currency-label'), hint = document.getElementById('goal-hint');
+      function where() { var r = document.querySelector('input[name="medical_location"]:checked'); return r ? r.value : 'turkey'; }
+      function update() {
+        var p = purpose.value;
+        med.hidden = p !== 'medical';
+        ev.hidden = p !== 'disaster_recovery';
+        var lim = limits[p === 'medical' ? 'medical_' + where() : p];
+        cur.textContent = lim && lim.currency === 'EUR' ? '(euros)' : '(lira)';
+        hint.textContent = lim ? 'The limit for this purpose is ' + lim.ceiling.toLocaleString('en-US') + ' ' + lim.currency + '. Larger needs cannot be posted.' : 'Choose a purpose to see its limit.';
+      }
+      purpose.addEventListener('change', update);
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="medical_location"]'), function (r) { r.addEventListener('change', update); });
       update();
     })();
   </script>
