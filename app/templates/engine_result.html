@@ -3,7 +3,10 @@
 {% block content %}
   <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
   <h3>Result {{ rid }}: {{ spec.measure }}{% if dims %} by {{ dims|join(", ") }}{% endif %}</h3>
-  {% if is_needs %}<p class="note"><strong>Counts of needs, not people.</strong> Each requester counts for at most their first 3 needs. The data is synthetic and its distributions are assumptions.</p>{% endif %}
+  <p>Dataset: <strong>{{ dataset }}</strong></p>
+  {% if is_needs %}<p class="note"><strong>Counts of needs, not people.</strong> Each requester counts for at most their first 3 needs.
+    {% if dataset == "needs_live" %}Only needs a verifier approved (on the board or fully funded) are counted. On this demo the data is demo data, not real people.{% else %}The data is synthetic and its distributions are assumptions.{% endif %}
+    {% if dims and "band" in dims %}Euro needs have no goal band and are not in any band cell.{% endif %}</p>{% endif %}
   {% if spec.filters %}<p>Filters: {% for f in spec.filters %}{{ f[0] }} in {{ f[1]|join(", ") }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
   <p>Values are noisy. "suppressed" means the noisy count was below {{ suppress_below }}. Shown values can still be pure noise: an empty cell occasionally lands above the threshold, so treat small numbers with caution.</p>
   <table border="1" cellpadding="4">

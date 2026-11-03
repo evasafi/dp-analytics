@@ -7,7 +7,17 @@
   <progress value="{{ b.spent|float }}" max="{{ b.total|float }}"></progress>
   {% endfor %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <p>Analytics are being rebuilt for the new data model, so queries are not available yet.</p>
+  <h3>Count needs</h3>
+  <p class="note">Each query costs {{ cost }} of the chosen dataset's budget. Counts are noisy, each requester counts for at most their first 3 needs, and cells below 30 are suppressed. The preview is free.</p>
+  <form method="post" action="/engine/needs/preview">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>Dataset <select name="dataset">
+      {% for key, label in datasets %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select></label></p>
+    <p>Group by:<br>
+      {% for key, label in groupings %}<label><input type="radio" name="grouping" value="{{ key }}"{% if loop.first %} checked{% endif %}> {{ label }}</label><br>{% endfor %}</p>
+    <p><button type="submit">Preview (free)</button></p>
+  </form>
   <hr>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf" value="{{ csrf }}">

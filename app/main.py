@@ -69,21 +69,7 @@ from sqlalchemy import text
 from app.auth import require_role
 from app.budget import BudgetExhausted
 from app.db import engine
-def _budgets():
-    """Both analytics budgets, for the admin and analyst pages."""
-    with engine.connect() as c:
-        rows = c.execute(text("SELECT name, epsilon_total, epsilon_spent FROM datasets ORDER BY id")).all()
-    return [{"name": r.name, "total": r.epsilon_total, "spent": r.epsilon_spent,
-             "remaining": r.epsilon_total - r.epsilon_spent} for r in rows]
-
-
-def _analyst_page(request: Request, user, status_code: int = 200, **ctx):
-    return render(request, "analyst.html", status_code=status_code, user=user, budgets=_budgets(), **ctx)
-
-
-@app.get("/analyst")
-def analyst_page(request: Request, user=Depends(require_role("analyst"))):
-    return _analyst_page(request, user)
+from app.routes.analytics import budgets as _budgets
 
 
 import json
@@ -114,7 +100,8 @@ from app.engine_noise import SUPPRESS_BELOW
 def _load_result(rid: int, user):
     with engine.connect() as c:
         row = c.execute(
-            text("SELECT r.id, r.spec, r.cells, a.query_type FROM results r JOIN audit_log a ON a.id = r.audit_id WHERE r.id = :r AND r.user_id = :u"),
+            text("SELECT r.id, r.spec, r.cells, a.query_type, d.name AS dataset FROM results r JOIN audit_log a ON a.id = r.audit_id "
+                 "JOIN datasets d ON d.id = r.dataset_id WHERE r.id = :r AND r.user_id = :u"),
             {"r": rid, "u": user.id}).one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -133,7 +120,7 @@ def engine_result(request: Request, rid: int, user=Depends(require_role("analyst
     rows = [[*k, _show(v)] for k, v in row.cells]
     return render(request, "engine_result.html", user=user, rid=rid, spec=row.spec,
                   dims=row.spec["group_by"], rows=rows, suppress_below=SUPPRESS_BELOW,
-                  is_needs=(row.query_type == "needs_count"))
+                  is_needs=(row.query_type == "needs_count"), dataset=row.dataset)
 
 
 @app.get("/engine/result/{rid}/csv")
@@ -228,3 +215,6 @@ app.include_router(board_routes.router)
 from app.routes import support as support_routes
 
 app.include_router(support_routes.router)
+from app.routes import analytics as analytics_routes
+
+app.include_router(analytics_routes.router)

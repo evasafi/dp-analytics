@@ -17,12 +17,12 @@ A needs-matching platform with differentially private analytics (a graduation pr
 - Receipts: the requester answers a sent pledge with "it arrived" (confirmed) or "it did not arrive" (disputed, reason of 10 to 450 characters, verifiers only; the donor sees only "Disputed"). This also works after a withdrawal. A verifier settles a dispute as arrived (confirmed) or not arrived (cancelled, amount opens again), with a required note. Sent pledges unanswered for 14 days are listed for verifiers; nothing changes automatically. Pledge events carry "pledge <id>" (and ": <text>") in need_events.note, since need_events has no pledge column.
 - Euro goals only for medical treatment abroad. The lira-per-euro rate is a placeholder in `settings`. Per-purpose goal ceilings are in `purpose_limits`. Institutions (schools, mosques) are out of scope. No second verifier.
 - The "suggested amount" button reads `suggestion_stats` and is hidden until a band has enough finished needs (`settings.suggestion_min_needs`). Amount: what is still open divided by the band's average donors, rounded up to 10 lira, between the floor and the open amount. It only fills the amount field. Hidden for euro needs (no band).
-- Analytics: counts only, each requester's first 3 needs counted (person-level protection), Laplace noise at sensitivity 3, suppression below 30, fixed groupings, budget 10.0 per dataset. Datasets `needs_synthetic` and `needs_live`; the engine reads the views `synth_analytics` and `needs_analytics`.
+- Analytics: counts only, each requester's first 3 needs counted (person-level protection), Laplace noise at sensitivity 3, suppression below 30, fixed groupings, budget 10.0 per dataset. Datasets `needs_synthetic` and `needs_live`; the engine reads the views `synth_analytics` and `needs_analytics`. Groupings: need type (medical split into Turkey and abroad), province, status, need type x status, goal band (lira only; euro needs use a place but land in no band). 0.1 per query. Analysts choose either dataset; tests spend only throwaway datasets.
 
 ## State of the migration
-Done and tested: schema.sql (dev/test_schema), seeds, roles, requester flow, verifier flow, public board, supporter pledge flow (/support; the old /handovers is removed), receipts and disputes, the suggested-amount button. Run `git log --oneline` for the latest step.
-Not migrated yet: analytics routes (app/needs_engine.py is old), docs, diagrams.
-Plan: step 7 analytics on the new views, step 8 README, THREAT_MODEL, diagrams, a fresh-clone run, merge.
+Done and tested: schema.sql (dev/test_schema), seeds, roles, requester flow, verifier flow, public board, supporter pledge flow (/support; the old /handovers is removed), receipts and disputes, the suggested-amount button, analytics on the new views (/analyst, app/needs_engine.py). Run `git log --oneline` for the latest step.
+Not migrated yet: docs, diagrams.
+Plan: step 8 README, THREAT_MODEL, diagrams, a fresh-clone run, merge.
 
 ## Code layout
 - app/main.py: setup, login, register, admin, result pages, and old code not yet replaced. app/routes/*.py: one router per area. app/web.py: render, CSRF, templates, client_ip. app/reference.py and app/validation.py: lists and input checks.
@@ -30,7 +30,7 @@ Plan: step 7 analytics on the new views, step 8 README, THREAT_MODEL, diagrams, 
 - Included routers do not appear in `app.routes`; use `app.openapi()['paths']` to list routes.
 
 ## Tests
-dev/test_schema, test_requesters, test_verifiers, test_board, test_supporters, test_receipts, test_suggestion, test_roles, test_admin, run as `python -m dev.test_x`. Each refuses to run on a database without the new schema. Run all of them before a commit. Older tests (test_contact, test_form_errors, test_needs_*, test_budget, test_collusion) target the old schema and fail until migrated.
+dev/test_schema, test_requesters, test_verifiers, test_board, test_supporters, test_receipts, test_suggestion, test_analytics_engine, test_analytics_routes, test_roles, test_admin, run as `python -m dev.test_x`. Each refuses to run on a database without the new schema. Run all of them before a commit. Older tests (test_contact, test_form_errors) target the old schema and fail until migrated.
 
 ## Working style
 - Small steps. Explain what changes and why in plain language. Say what was tested and what was only argued. No emojis. Do not overstate results.

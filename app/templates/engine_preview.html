@@ -4,6 +4,7 @@
   <p>Signed in as <strong>{{ user.username }}</strong> (analyst).</p>
   <h3>Preview (nothing has been charged yet)</h3>
   <ul>
+    {% if dataset_text %}<li>Dataset: {{ dataset_text }}; grouped by {{ grouping_text }}</li>{% endif %}
     <li>Cost: <strong>{{ est.epsilon }}</strong> of the privacy budget</li>
     <li>Cells returned: {{ est.cells }}</li>
     <li>Typical error: {{ est.typical_error }}</li>

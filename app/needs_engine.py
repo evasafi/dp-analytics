@@ -1,10 +1,11 @@
-"""Differentially private counts over the needs table (person-level protection).
+"""Differentially private counts of needs (person-level protection).
 
-Each person's first CAP needs (by id) count; the rest are ignored. One person can
-therefore change any released total by at most CAP, so Laplace noise uses
-sensitivity CAP. Counts only, fixed groupings, no filters. The beneficiary engine
-(app/engine.py, engine_noise.py, engine_run.py) is not used or changed here,
-except for the Spec dataclass, the noise function and the budget spend.
+Each person's first CAP needs (by id) in the source view count; the rest are ignored. One person can therefore
+change any released total by at most CAP, so Laplace noise uses sensitivity CAP. Counts only, fixed groupings,
+no filters, every cell returned (empty ones included), noisy values below SUPPRESS_BELOW are withheld.
+
+Sources are views, chosen from a whitelist by dataset name: needs_synthetic reads synth_analytics (assumed data),
+needs_live reads needs_analytics (verified needs on the platform). A view name is never taken from input.
 """
 import hashlib
 import json
@@ -18,50 +19,46 @@ from app.db import engine
 from app.engine import MAX_CELLS, Spec
 from app.noise import _laplace
 from app.provinces import PROVINCES
+from app.reference import PURPOSES
 
 CAP = 3
 SENSITIVITY = CAP
 SUPPRESS_BELOW = 30
 
-CATEGORIES = ["household", "clothing", "education", "baby_child", "health",
-              "hygiene", "electronics", "culture_art", "sports", "street_animals"]
-STATUSES = ["published", "pending", "rejected", "pledged", "fulfilled"]
+# dataset name -> source view. Tests add throwaway dataset names here; nothing else does.
+SOURCES = {"needs_synthetic": "synth_analytics", "needs_live": "needs_analytics"}
+DATASET_TEXT = {"needs_synthetic": "Synthetic needs (assumed data)", "needs_live": "Needs on the platform (verified, demo data)"}
 
-# dimension name -> fixed list of values (column name equals dimension name)
-NEEDS_DIMS = {
-    "category": CATEGORIES,
-    "province": [p[1] for p in PROVINCES],
-    "status": STATUSES,
+NEED_TYPES = [k for k, _ in PURPOSES if k != "medical"] + ["medical_turkey", "medical_abroad"]
+# dimension -> (SQL expression over the view, from this whitelist only; fixed list of values or None for the goal bands)
+DIMS = {
+    "need_type": ("CASE WHEN purpose = 'medical' THEN 'medical_' || medical_location ELSE purpose END", NEED_TYPES),
+    "province": ("province", [p[1] for p in PROVINCES]),
+    "status": ("status", ["published", "fulfilled"]),
+    "band": ("band", None),   # lira needs only; euro needs have no band and land in no cell
 }
-ALLOWED_GROUPINGS = {
-    frozenset(["category"]), frozenset(["province"]), frozenset(["status"]),
-    frozenset(["category", "status"]),
-}
-# dataset id -> table (whitelist; table names are never taken from input)
-SOURCES = {}   # dataset id -> table. The real dataset is added on first use; tests add throwaway ids.
-_REAL = {"id": None}
+ALLOWED_GROUPINGS = {frozenset(["need_type"]), frozenset(["province"]), frozenset(["status"]),
+                     frozenset(["need_type", "status"]), frozenset(["band"])}
 
 
-def needs_dataset_id() -> int:
-    """Id of the needs_synthetic dataset, looked up by name once (ids differ between databases)."""
-    if _REAL["id"] is None:
+def dim_values(d: str) -> list:
+    """The fixed values of a dimension. Goal bands come from the amount_bands reference table, not from any need."""
+    values = DIMS[d][1]
+    if values is None:
         with engine.connect() as c:
-            _REAL["id"] = c.execute(
-                text("SELECT id FROM datasets WHERE name = 'needs_synthetic'")).scalar_one()
-    SOURCES.setdefault(_REAL["id"], "needs_synth")
-    return _REAL["id"]
+            values = [r[0] for r in c.execute(text("SELECT code FROM amount_bands ORDER BY code"))]
+    return values
 
 
 def cell_count(spec: Spec) -> int:
     n = 1
     for d in spec.group_by:
-        n *= len(NEEDS_DIMS[d])
+        n *= len(dim_values(d))
     return n
 
 
-def validate_needs(spec: Spec, dataset_id: int) -> None:
-    needs_dataset_id()   # makes sure the real dataset is whitelisted
-    if dataset_id not in SOURCES:
+def validate_needs(spec: Spec, dataset: str) -> None:
+    if dataset not in SOURCES:
         raise ValueError("dataset not available for needs analytics")
     if spec.measure != "count":
         raise ValueError("needs analytics supports counts only")
@@ -69,7 +66,7 @@ def validate_needs(spec: Spec, dataset_id: int) -> None:
         raise ValueError("filters are not supported for needs analytics")
     if len(set(spec.group_by)) != len(spec.group_by):
         raise ValueError("repeated dimension")
-    if any(d not in NEEDS_DIMS for d in spec.group_by):
+    if any(d not in DIMS for d in spec.group_by):
         raise ValueError("unknown dimension")
     if frozenset(spec.group_by) not in ALLOWED_GROUPINGS:
         raise ValueError("this grouping is not allowed")
@@ -77,29 +74,31 @@ def validate_needs(spec: Spec, dataset_id: int) -> None:
         raise ValueError("too many cells")
 
 
-def cost(spec: Spec, dataset_id: int) -> float:
-    validate_needs(spec, dataset_id)
+def dataset_id(conn, dataset: str) -> int:
+    return conn.execute(text("SELECT id FROM datasets WHERE name = :n"), {"n": dataset}).scalar_one()
+
+
+def cost(spec: Spec, dataset: str) -> float:
+    validate_needs(spec, dataset)
     return settings.epsilon_per_count
 
 
-def estimate(spec: Spec, dataset_id: int) -> dict:
+def estimate(spec: Spec, dataset: str) -> dict:
     """Public facts only: nothing here depends on the data."""
-    eps = cost(spec, dataset_id)
+    eps = cost(spec, dataset)
     return {"epsilon": eps, "cells": cell_count(spec), "suppress_below": SUPPRESS_BELOW,
-            "cap_per_person": CAP,
-            "typical_error": f"about {SENSITIVITY / eps:.0f} needs per cell"}
+            "cap_per_person": CAP, "typical_error": f"about {SENSITIVITY / eps:.0f} needs per cell"}
 
 
-def true_counts(conn, dataset_id: int, spec: Spec) -> dict:
+def true_counts(conn, dataset: str, spec: Spec) -> dict:
     """{cell: count} for every cell, including empty ones, after the per-person cap."""
-    validate_needs(spec, dataset_id)
-    table = SOURCES[dataset_id]
-    sel = [f"{d} AS g{i}" for i, d in enumerate(spec.group_by)]
-    sql = (f"WITH capped AS (SELECT category, province, status, "
-           f"row_number() OVER (PARTITION BY person_id ORDER BY id) AS rn FROM {table}) "
+    validate_needs(spec, dataset)
+    view = SOURCES[dataset]
+    sel = [f"{DIMS[d][0]} AS g{i}" for i, d in enumerate(spec.group_by)]
+    sql = (f"WITH capped AS (SELECT *, row_number() OVER (PARTITION BY person_id ORDER BY id) AS rn FROM {view}) "
            f"SELECT {', '.join(sel)}, count(*) AS n FROM capped WHERE rn <= {int(CAP)} "
            f"GROUP BY " + ", ".join(f"g{i}" for i in range(len(spec.group_by))))
-    cells = {key: 0 for key in product(*[NEEDS_DIMS[d] for d in spec.group_by])}
+    cells = {key: 0 for key in product(*[dim_values(d) for d in spec.group_by])}
     for r in conn.execute(text(sql)):
         key = tuple(r[i] for i in range(len(spec.group_by)))
         if key in cells:
@@ -116,31 +115,29 @@ def noisy_counts(true_cells: dict, epsilon: float) -> dict:
     return out
 
 
-def _spec_params(spec: Spec) -> dict:
+def _spec_params(spec: Spec, dataset: str) -> dict:
     return {"measure": spec.measure, "group_by": list(spec.group_by),
-            "filters": [[d, list(v)] for d, v in spec.filters]}
+            "filters": [[d, list(v)] for d, v in spec.filters], "dataset": dataset}
 
 
-def run_needs_query(conn, user_id: int, dataset_id: int, spec: Spec) -> dict:
+def run_needs_query(conn, user_id: int, dataset: str, spec: Spec) -> dict:
     """Validate, spend, compute, audit. Call inside engine.begin(); any error rolls back everything."""
-    eps = cost(spec, dataset_id)          # validates before anything is charged
-    spend(conn, dataset_id, eps)          # row lock; raises BudgetExhausted if short
-    truth = true_counts(conn, dataset_id, spec)
+    eps = cost(spec, dataset)             # validates before anything is charged
+    ds = dataset_id(conn, dataset)
+    spend(conn, ds, eps)                  # row lock; raises BudgetExhausted if short
+    truth = true_counts(conn, dataset, spec)
     noisy = noisy_counts(truth, eps)
     cells = [[list(k), noisy[k]] for k in sorted(noisy)]
     digest = hashlib.sha256(json.dumps(cells).encode()).hexdigest()
-    spec_json = json.dumps(_spec_params(spec), sort_keys=True)
+    spec_json = json.dumps(_spec_params(spec, dataset), sort_keys=True)
     audit_id = conn.execute(
         text("INSERT INTO audit_log (user_id, dataset_id, query_type, params, "
              "epsilon_charged, result_hash) VALUES (:u, :d, :q, CAST(:p AS jsonb), :e, :h) RETURNING id"),
-        {"u": user_id, "d": dataset_id, "q": "needs_count",
-         "p": spec_json, "e": eps, "h": digest},
+        {"u": user_id, "d": ds, "q": "needs_count", "p": spec_json, "e": eps, "h": digest},
     ).scalar_one()
     result_id = conn.execute(
         text("INSERT INTO results (user_id, dataset_id, audit_id, spec, cells) "
              "VALUES (:u, :d, :a, CAST(:s AS jsonb), CAST(:c AS jsonb)) RETURNING id"),
-        {"u": user_id, "d": dataset_id, "a": audit_id, "s": spec_json,
-         "c": json.dumps(cells)},
+        {"u": user_id, "d": ds, "a": audit_id, "s": spec_json, "c": json.dumps(cells)},
     ).scalar_one()
-    return {"epsilon": eps, "cells": {tuple(k): v for k, v in cells},
-            "audit_id": audit_id, "result_id": result_id}
+    return {"epsilon": eps, "cells": {tuple(k): v for k, v in cells}, "audit_id": audit_id, "result_id": result_id}
