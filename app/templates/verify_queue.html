@@ -1,17 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Review queue{% endblock %}
 {% block content %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/handovers">Pledges and handovers</a></p>
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier).</p>
   {% if done == "approved" %}<p><strong>Approved and published.</strong></p>{% endif %}
-  {% if done == "rejected" %}<p><strong>Rejected. The requester will see your note.</strong></p>{% endif %}
+  {% if done == "rejected" %}<p><strong>Rejected. The requester will see your reason.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>
   {% if not rows %}<p>Nothing is waiting.</p>{% else %}
   <table>
-    <tr><th>Posted</th><th>Category</th><th>Place</th><th>Start of the description</th><th></th></tr>
+    <tr><th>Posted</th><th>For</th><th>Place</th><th>Goal</th><th>Start of the description</th><th></th></tr>
     {% for r in rows %}
-    <tr><td>{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ labels[r.category] }}</td>
-        <td>{{ r.district }}, {{ r.province }}</td><td>{{ r.snippet }}</td>
-        <td><a href="/verify/{{ r.id }}">review</a></td></tr>
+    <tr><td style="white-space: nowrap">{{ r.created }}</td><td>{{ r.label }}</td><td>{{ r.place }}</td><td>{{ r.goal }}</td>
+        <td>{{ r.snippet }}</td><td><a href="/verify/{{ r.id }}">review</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Look again</h3>
+  <p class="note">Needs the requester withdrew after money had already been confirmed. Refunds are between donors and the requester, but repeated withdrawals are worth noticing.</p>
+  {% if not flags %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>For</th><th>Place</th><th>Confirmed before withdrawal</th><th>Reason given</th><th></th></tr>
+    {% for f in flags %}
+    <tr><td>{{ f.label }}</td><td>{{ f.place }}</td><td>{{ f.confirmed }}</td><td>{{ f.reason }}</td><td><a href="/verify/{{ f.id }}">open</a></td></tr>
     {% endfor %}
   </table>
   {% endif %}

@@ -84,3 +84,29 @@ def need_problems(form: dict, limits: dict) -> list:
     if problem:
         errors.append(problem)
     return errors
+
+
+_PHONE_LIKE = re.compile(r"(?:\d[\s\-().+]*){7,}")
+
+
+def _name_words(s: str) -> set:
+    return {w for w in re.findall(r"[^\W\d_]+", s.lower()) if len(w) >= 3}
+
+
+def public_text_problem(public_text: str, contact: str, payee_name: str, username: str):
+    """The text the public board shows must not identify the requester or reveal how to reach them."""
+    t = public_text.strip()
+    if not 10 <= len(t) <= 300:
+        return "The public text must be 10 to 300 characters."
+    low = t.lower()
+    if "@" in t or "://" in t or "www." in low:
+        return "The public text must not contain an email address or a link."
+    if _PHONE_LIKE.search(t):
+        return "The public text looks like it contains a phone number or an account number. Remove digits that could identify someone."
+    if len(contact) >= 3 and contact.lower() in low:
+        return "The public text contains the requester's contact details."
+    if _name_words(payee_name) & _name_words(t):
+        return "The public text contains part of the account holder's name. Do not name anyone."
+    if len(username) >= 3 and username.lower() in low:
+        return "The public text contains the requester's username."
+    return None

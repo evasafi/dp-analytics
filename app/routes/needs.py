@@ -90,9 +90,11 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, erro
     for r in rows:
         funding = ""
         if r.donors:
-            funding = "Confirmed %s, promised %s more, %d donor%s." % (
-                money(r.confirmed, r.currency), money(r.promised - r.confirmed, r.currency), r.donors,
-                "" if r.donors == 1 else "s")
+            parts = ["Confirmed " + money(r.confirmed, r.currency)]
+            if r.promised - r.confirmed > 0:
+                parts.append("promised %s more" % money(r.promised - r.confirmed, r.currency))
+            parts.append("%d donor%s" % (r.donors, "" if r.donors == 1 else "s"))
+            funding = ", ".join(parts) + "."
         shown.append({"id": r.id, "created": r.created_at.strftime("%Y-%m-%d"), "label": need_label(r.purpose, r.medical_location),
                       "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency),
                       "status": STATUS_TEXT[r.status], "funding": funding, "description": r.description,
