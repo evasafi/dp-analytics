@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_ledger.html" import ledger %}
+{% block title %}{{ c.label }}{% endblock %}
+{% block content %}
+  <p><a href="/board">Back to the board</a> | <a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>
+  <h3>{{ c.label }} in {{ c.place }}{% if c.event %} ({{ c.event }}){% endif %}</h3>
+  <p class="note">Posted {{ c.month }}. Goal {{ c.goal }}{% if c.euro %}, about {{ goal_try }} TRY at 1 euro = {{ rate }} lira. This is an estimate: the real amount depends on the exchange rate when money is sent{% endif %}.</p>
+  {{ ledger(c) }}
+  <p>{{ c.funding }}</p>
+  <p class="note">Dark part of the bar: confirmed by the requester. Hatched part: promised, not yet confirmed.</p>
+  <p>{{ c.text }}</p>
+  <h3>How giving works</h3>
+  <ol>
+    <li>Pledge an amount of {{ floor }} lira or more.</li>
+    <li>After you pledge you see the requester's account details and send the money straight to them. This site never holds it.</li>
+    <li>Mark your pledge as sent. If you do not, it expires after {{ days }} days and the amount is released.</li>
+    <li>The requester confirms they received it, and only then does it count as confirmed.</li>
+  </ol>
+  <p class="note">The requester can withdraw a need. Any refund of money already sent is between you and the requester; this site cannot refund it.</p>
+  <p>To pledge, <a href="/login">sign in</a> with a supporter account, or <a href="/register">create one</a>.</p>
+{% endblock %}

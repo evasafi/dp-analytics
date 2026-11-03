@@ -1,0 +1,5 @@
+{% macro ledger(c) -%}
+<div role="img" aria-label="{{ '%.0f'|format(c.conf_pct) }} percent confirmed, {{ '%.0f'|format(c.more_pct) }} percent more promised" style="display: flex; height: 12px; background: #e3e8ee; border-radius: 3px; overflow: hidden; margin: .4rem 0">
+  <span style="width: {{ '%.1f'|format(c.conf_pct) }}%; background: #1d5fa6"></span><span style="width: {{ '%.1f'|format(c.more_pct) }}%; background: repeating-linear-gradient(135deg, #a8c7e8 0 5px, #d4e3f3 5px 9px)"></span>
+</div>
+{%- endmacro %}

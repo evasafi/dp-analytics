@@ -45,3 +45,7 @@ def check_csrf(request: Request, form_token: str):
     raw = _read_csrf(request)
     if raw is None or not secrets.compare_digest(raw, form_token):
         raise HTTPException(status_code=403, detail="bad CSRF token")
+
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
