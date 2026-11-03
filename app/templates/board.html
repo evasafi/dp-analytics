@@ -1,45 +1,53 @@
 {% extends "base.html" %}
+{% from "_ledger.html" import ledger %}
 {% block title %}Needs board{% endblock %}
 {% block content %}
   <p><a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>
   <h3>Needs board</h3>
-  <p class="note">Every need here was reviewed by a verifier before it appeared. To offer help, create a supporter account. Contact between people goes through the verifier.</p>
+  <p class="note">Every need here was reviewed by a verifier before it appeared. To pledge, create a supporter account. You send money straight to the requester's account, and nothing passes through this site.</p>
   <form method="get" action="/board">
-    <label>Category <select name="category"><option value="">All</option>
-      {% for key, label in categories %}<option value="{{ key }}" {% if key == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    <label>Purpose <select name="purpose"><option value="">All</option>
+      {% for key, label in purposes %}<option value="{{ key }}" {% if key == purpose %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select></label>
     <label>Province <select name="province"><option value="">All</option>
       {% for code, name, lat, lon in provinces %}<option value="{{ name }}" {% if name == province %}selected{% endif %}>{{ name }}</option>{% endfor %}
     </select></label>
+    <label>Order by <select name="sort">
+      {% for key, label in sorts.items() %}<option value="{{ key }}" {% if key == sort %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
     <button type="submit">Filter</button> <a href="/board">Clear</a>
   </form>
-  <div id="map" data-category="{{ category }}" data-province="{{ province }}"><noscript>The map needs JavaScript. Use the filters.</noscript></div>
-  <p class="note">The map counts open needs per province. Boundaries: General Command of Mapping, Türkiye, via OCHA/HDX (CC BY-IGO).</p>
+  <div id="map" data-purpose="{{ purpose }}" data-province="{{ province }}"><noscript>The map needs JavaScript. Use the filters.</noscript></div>
+  <p class="note" id="map-credit" hidden>The map counts open needs per province. Boundaries: General Command of Mapping, Türkiye, via OCHA/HDX (CC BY-IGO).</p>
   <h3>{{ total }} open need{{ "" if total == 1 else "s" }}</h3>
-  {% if not rows %}<p>No needs match.</p>{% else %}
-  <table>
-    <tr><th>Posted</th><th>Category</th><th>Place</th><th>What is needed</th></tr>
-    {% for r in rows %}
-    <tr><td>{{ r.month }}</td><td>{{ labels[r.category] }}</td><td>{{ r.district }}, {{ r.province }}</td><td>{{ r.public_text }}</td></tr>
-    {% endfor %}
-  </table>
+  <p class="note">Dark part of the bar: confirmed by the requester. Hatched part: promised, not yet confirmed.</p>
+  {% if not cards %}<p>No needs match.</p>{% else %}
+  {% for c in cards %}
+  <article data-need="{{ c.id }}" style="border: 1px solid #d3dae3; border-left: 5px solid {{ '#6d4aa3' if c.euro else '#1d5fa6' }}; padding: .8rem 1rem; margin: .7rem 0">
+    <strong><a href="/board/{{ c.id }}">{{ c.label }} in {{ c.place }}</a></strong>{% if c.event %} ({{ c.event }}){% endif %}{% if c.euro %} <em>(euro goal, amounts approximate)</em>{% endif %}
+    <div class="note">Posted {{ c.month }}. Goal {{ c.goal }}.</div>
+    {{ ledger(c) }}
+    <div>{{ c.funding }}</div>
+    <p>{{ c.text }}</p>
+  </article>
+  {% endfor %}
   <p>{% if prev_url %}<a href="{{ prev_url }}">Newer</a>{% endif %} {% if next_url %}<a href="{{ next_url }}">Older</a>{% endif %}</p>
   {% endif %}
   <script>
     (function () {
       var box = document.getElementById('map');
       if (!box) return;
-      var cat = box.getAttribute('data-category') || '';
+      var purpose = box.getAttribute('data-purpose') || '';
       var sel = box.getAttribute('data-province') || '';
       var NS = 'http://www.w3.org/2000/svg';
-      var dataUrl = '/board/map-data' + (cat ? '?category=' + encodeURIComponent(cat) : '');
+      var dataUrl = '/board/map-data' + (purpose ? '?purpose=' + encodeURIComponent(purpose) : '');
       function get(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url); return r.json(); }); }
       Promise.all([get(dataUrl), get('/static/geo/turkey_provinces.min.geojson')])
         .then(function (res) { draw(res[0], res[1]); })
-        .catch(function () { box.textContent = 'The map is not available. Use the filters below.'; });
+        .catch(function () { box.textContent = 'The map is not available. Use the filters above.'; });
       function go(name) {
         var u = '/board?province=' + encodeURIComponent(name);
-        if (cat) u += '&category=' + encodeURIComponent(cat);
+        if (purpose) u += '&purpose=' + encodeURIComponent(purpose);
         window.location.href = u;
       }
       function draw(counts, geo) {
@@ -103,6 +111,7 @@
         });
         box.textContent = '';
         box.appendChild(svg);
+        document.getElementById('map-credit').hidden = false;
       }
     })();
   </script>

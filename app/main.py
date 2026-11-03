@@ -222,6 +222,9 @@ app.include_router(needs_routes.router)
 from app.routes import verify as verify_routes
 
 app.include_router(verify_routes.router)
+from app.routes import board as board_routes
+
+app.include_router(board_routes.router)
 
 
 # ---------------- public board ----------------
@@ -261,58 +264,6 @@ def _too_many():
 def _bad_filter(category: str, province: str) -> bool:
     return (bool(category) and category not in dict(CATEGORIES)) or (bool(province) and province not in PROVINCE_NAMES)
 
-
-@app.get("/board")
-def board(request: Request, category: str = "", province: str = "",
-          page: int = Query(1, ge=1, le=1000)):
-    if not _board_rate_ok(_client_ip(request)):
-        return _too_many()
-    if _bad_filter(category, province):
-        return Response("Unknown filter.", status_code=400, media_type="text/plain")
-    where, params = "status = 'published'", {}
-    if category:
-        where += " AND category = :c"
-        params["c"] = category
-    if province:
-        where += " AND province = :p"
-        params["p"] = province
-    with engine.connect() as c:
-        total = c.execute(text(f"SELECT count(*) FROM needs WHERE {where}"), params).scalar_one()
-        rows = c.execute(
-            text("SELECT category, province, district, public_text, to_char(created_at, 'YYYY-MM') AS month "
-                 f"FROM needs WHERE {where} ORDER BY id DESC LIMIT :lim OFFSET :off"),
-            {**params, "lim": PAGE_SIZE, "off": (page - 1) * PAGE_SIZE}).all()
-
-    def link(n):
-        q = {k: v for k, v in (("category", category), ("province", province)) if v}
-        if n > 1:
-            q["page"] = n
-        return "/board" + ("?" + urlencode(q) if q else "")
-
-    return templates.TemplateResponse(request, "board.html", {
-        "rows": rows, "total": total, "category": category, "province": province,
-        "categories": CATEGORIES, "provinces": PROVINCES, "labels": dict(CATEGORIES),
-        "prev_url": link(page - 1) if page > 1 else None,
-        "next_url": link(page + 1) if page * PAGE_SIZE < total else None})
-
-
-@app.get("/board/map-data")
-def board_map_data(request: Request, category: str = ""):
-    if not _board_rate_ok(_client_ip(request)):
-        return _too_many()
-    if _bad_filter(category, ""):
-        return Response("Unknown filter.", status_code=400, media_type="text/plain")
-    sql = "SELECT province, count(*) FROM needs WHERE status = 'published'"
-    params = {}
-    if category:
-        sql += " AND category = :c"
-        params["c"] = category
-    sql += " GROUP BY province"
-    with engine.connect() as c:
-        counts = dict(c.execute(text(sql), params).all())
-    data = [{"name": n, "pcode": code, "lat": la, "lon": lo, "count": int(counts.get(n, 0))}
-            for code, n, la, lo in PROVINCES]
-    return JSONResponse(data, headers={"Cache-Control": "public, max-age=60"})
 
 # ---------------- contact details ----------------
 _EMAIL_SHAPE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
