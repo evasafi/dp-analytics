@@ -19,6 +19,7 @@ from app.config import settings
 from app.db import engine
 from app.districts import DISTRICTS_BY_PROVINCE
 from app.main import app
+from app.ratelimit import REGISTER_KEY
 
 PW = "throwaway-password-1"
 admin = create_engine(make_url(settings.database_url).set(username="postgres", password=getpass.getpass("postgres password: ")))
@@ -62,6 +63,8 @@ def cleanup():
         c.execute(text(f"DELETE FROM pledges WHERE supporter_id IN {sub} OR need_id IN {mine}"))
         c.execute(text(f"DELETE FROM needs WHERE requester_id IN {sub}"))
         c.execute(text("DELETE FROM users WHERE left(username, 3) = 'rq_'"))
+        # the sign-up counter of the test client's fake address, so the test can run again within the hour
+        c.execute(text("DELETE FROM login_failures WHERE username = :k AND ip = 'testclient'"), {"k": REGISTER_KEY})
 
 
 def client_for(u):

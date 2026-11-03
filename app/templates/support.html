@@ -1,44 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Support{% endblock %}
+{% block title %}My pledges{% endblock %}
 {% block content %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/board">Public board</a></p>
-  {% if done == "pledged" %}<p><strong>Thank you. A verifier will contact you to arrange the handover.</strong></p>{% endif %}
-  {% if done == "cancelled" %}<p><strong>Your pledge was cancelled and the need is back on the board.</strong></p>{% endif %}
-
-  <h3>My pledges ({{ active }} of {{ max_pledges }} active)</h3>
-  {% if not pledges %}<p>You have not pledged to anything yet.</p>{% else %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/board">Find a need on the board</a></p>
+  {% if done == "pledged" %}<p><strong>Thank you. Send the money to the account shown below, then mark the pledge as sent.</strong></p>{% endif %}
+  {% if done == "sent" %}<p><strong>Marked as sent. The requester will confirm when it arrives.</strong></p>{% endif %}
+  {% if done == "cancelled" %}<p><strong>Your pledge was cancelled and the amount is open again.</strong></p>{% endif %}
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <h3>My pledges ({{ unconfirmed }} of {{ max_unconfirmed }} not yet confirmed)</h3>
+  {% if not rows %}<p>You have not pledged yet. Choose a need on the <a href="/board">board</a>.</p>{% else %}
   <table>
-    <tr><th>Pledged</th><th>Category</th><th>Place</th><th>What is needed</th><th>Status</th><th></th></tr>
-    {% for p in pledges %}
-    <tr><td>{{ p.created_at.strftime("%Y-%m-%d") }}</td><td>{{ labels[p.category] }}</td><td>{{ p.district }}, {{ p.province }}</td><td>{{ p.public_text }}</td>
-        <td>{% if p.pstatus == "cancelled" %}Cancelled{% elif p.nstatus == "fulfilled" %}Fulfilled{% elif p.pstatus == "pledged" %}Waiting for the verifier{% elif p.pstatus == "handed_over" %}Handover arranged{% else %}Cancelled{% endif %}</td>
-        <td>{% if p.pstatus == "pledged" and p.nstatus == "pledged" %}
-          <form method="post" action="/support/cancel/{{ p.id }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>
-        {% endif %}</td></tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-
-  <h3>Needs you can help with</h3>
-  <form method="get" action="/support">
-    <label>Category <select name="category"><option value="">All</option>
-      {% for key, label in categories %}<option value="{{ key }}" {% if key == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select></label>
-    <label>Province <select name="province"><option value="">All</option>
-      {% for code, name, lat, lon in provinces %}<option value="{{ name }}" {% if name == province %}selected{% endif %}>{{ name }}</option>{% endfor %}
-    </select></label>
-    <button type="submit">Filter</button> <a href="/support">Clear</a>
-  </form>
-  <p>{{ total }} open need{{ "" if total == 1 else "s" }}</p>
-  {% if rows %}
-  <table>
-    <tr><th>Posted</th><th>Category</th><th>Place</th><th>What is needed</th><th></th></tr>
+    <tr><th>Pledged</th><th>For</th><th>Place</th><th>Amount</th><th>Status</th><th>Pay into</th></tr>
     {% for r in rows %}
-    <tr><td>{{ r.month }}</td><td>{{ labels[r.category] }}</td><td>{{ r.district }}, {{ r.province }}</td><td>{{ r.public_text }}</td>
-        <td><a href="/support/pledge/{{ r.id }}">Pledge</a></td></tr>
+    <tr data-pledge="{{ r.id }}">
+      <td style="white-space: nowrap">{{ r.created }}</td><td><a href="/board/{{ r.nid }}">{{ r.label }}</a></td><td>{{ r.place }}</td><td>{{ r.amount }}</td>
+      <td>{{ r.status }}{% if r.expires %}<br>by {{ r.expires }}{% endif %}{% if r.need_status %}<br><em>Need: {{ r.need_status }}</em>{% endif %}</td>
+      <td>{% if r.iban %}{{ r.payee }}<br><code>{{ r.iban }}</code>{% endif %}
+        {% if r.pledged %}
+        <form method="post" action="/support/{{ r.id }}/sent"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">I have sent it</button></form>
+        <form method="post" action="/support/{{ r.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>
+        {% endif %}
+      </td>
+    </tr>
     {% endfor %}
   </table>
-  <p>{% if prev_url %}<a href="{{ prev_url }}">Newer</a>{% endif %} {% if next_url %}<a href="{{ next_url }}">Older</a>{% endif %}</p>
   {% endif %}
   <hr>
   <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
