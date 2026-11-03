@@ -1,75 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Analyst{% endblock %}
 {% block content %}
-  <p>Signed in as <strong>{{ user.username }}</strong> (analyst).
-     <a href="/engine/results">My past results</a></p>
-  <p>Privacy budget: <strong>{{ "%.1f"|format(budget.remaining) }}</strong> remaining of {{ "%.1f"|format(budget.total) }}</p>
-  <progress value="{{ budget.spent|float }}" max="{{ budget.total|float }}"></progress>
+  <p>Signed in as <strong>{{ user.username }}</strong> (analyst). <a href="/engine/results">My past results</a></p>
+  {% for b in budgets %}
+  <p>Privacy budget, {{ b.name }}: <strong>{{ "%.1f"|format(b.remaining) }}</strong> remaining of {{ "%.1f"|format(b.total) }}</p>
+  <progress value="{{ b.spent|float }}" max="{{ b.total|float }}"></progress>
+  {% endfor %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-
-  <h3>New query</h3>
-  <form method="post" action="/engine/preview" id="qb">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <fieldset><legend>Measure</legend>
-      <label><input type="radio" name="measure" value="count" checked> Count of people</label>
-      <label><input type="radio" name="measure" value="mean"> Mean monthly transfer</label>
-    </fieldset>
-    <fieldset><legend>Group by (up to two)</legend>
-      {% for i in (1, 2) %}
-      <select name="group_by" class="gb">
-        <option value="">(none)</option>
-        <option value="region">region</option>
-        <option value="household_size">household size</option>
-        <option value="transfer_band">transfer band</option>
-      </select>
-      {% endfor %}
-    </fieldset>
-    <fieldset class="checks"><legend>Filters (leave all unticked for no filter)</legend>
-      <p>Region: {% for r in regions %}<label><input type="checkbox" name="f_region" value="{{ r }}"> {{ r }}</label>{% endfor %}</p>
-      <p>Household size: {% for h in range(1, 13) %}<label><input type="checkbox" name="f_household_size" value="{{ h }}"> {{ h }}</label>{% endfor %}</p>
-      <p>Transfer band: {% for b in range(10) %}<label><input type="checkbox" name="f_transfer_band" value="{{ b }}"> {{ b*50 }}-{{ b*50+50 }}</label>{% endfor %}</p>
-    </fieldset>
-    <p id="hint" class="note"></p>
-    <button type="submit">Preview (free)</button>
-  </form>
-  <p class="note">Preview shows the cost and expected error. Nothing is charged until you confirm.</p>
-
-  <hr>
-  <h3>Needs (synthetic data)</h3>
-  <p>Needs budget: <strong>{{ "%.1f"|format(needs_budget.remaining) }}</strong> remaining of {{ "%.1f"|format(needs_budget.total) }}</p>
-  <progress value="{{ needs_budget.spent|float }}" max="{{ needs_budget.total|float }}"></progress>
-  <p class="note">Counts of needs, not people. Each requester counts for at most their first 3 needs. The data is synthetic and its distributions are assumptions. Cost {{ needs_cost }} per query.</p>
-  <form method="post" action="/engine/needs/preview">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <select name="grouping">
-      <option value="category">by category</option>
-      <option value="province">by province</option>
-      <option value="status">by status</option>
-      <option value="category_status">by category and status</option>
-    </select>
-    <button type="submit">Preview (free)</button>
-  </form>
-
+  <p>Analytics are being rebuilt for the new data model, so queries are not available yet.</p>
   <hr>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <button type="submit">Sign out</button>
   </form>
-  <script>
-    (function () {
-      var size = {region: 8, household_size: 12, transfer_band: 10};
-      var cost = {count: {{ costs.count }}, mean: {{ costs.mean }}};
-      function update() {
-        var m = document.querySelector('input[name=measure]:checked').value;
-        var cells = 1, seen = {};
-        document.querySelectorAll('.gb').forEach(function (s) {
-          if (s.value && !seen[s.value]) { cells *= size[s.value]; seen[s.value] = 1; }
-        });
-        document.getElementById('hint').textContent =
-          'Cost: ' + cost[m] + ' of the budget, ' + cells + ' cell(s). The server checks everything again.';
-      }
-      document.getElementById('qb').addEventListener('change', update);
-      update();
-    })();
-  </script>
 {% endblock %}
