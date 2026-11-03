@@ -140,7 +140,10 @@ def _pledge_page(request, user, pid: int, status_code=200, error=None, note=""):
             raise HTTPException(status_code=404, detail="not found")
         history = c.execute(text(
             "SELECT e.ts, e.event, e.note, u.username FROM need_events e JOIN users u ON u.id = e.actor_id "
-            "WHERE e.need_id = :n AND (e.note = :tag OR e.note LIKE :prefix) ORDER BY e.id"),
+            "WHERE e.need_id = :n AND (e.note = :tag OR e.note LIKE :prefix) "
+            # only events the pledge routes write: a withdrawal reason is free text and could imitate a pledge note
+            "AND e.event IN ('pledged', 'pledge_sent', 'pledge_cancelled', 'receipt_confirmed', 'receipt_disputed', "
+            "'dispute_arrived', 'dispute_not_arrived') ORDER BY e.id"),
             {"n": p.nid, "tag": f"pledge {pid}", "prefix": f"pledge {pid}:%"}).all()
     events = [{"ts": e.ts.strftime("%Y-%m-%d %H:%M"), "event": e.event, "who": e.username,
                "note": e.note.split(":", 1)[1].strip() if ":" in e.note else ""} for e in history]

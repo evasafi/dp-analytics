@@ -285,6 +285,15 @@ try:
     check("after a withdrawal the sent pledge is still open and listed", pstat(p6) == "sent" and "It arrived" in row_of(rq.get("/needs/mine").text, p6))
     r = confirm(rq, tq, p6)
     check("the requester can still confirm it (303, confirmed, the need stays withdrawn)", r.status_code == 303 and pstat(p6) == "confirmed" and nstat(n6) == "withdrawn")
+
+    # ---- a withdrawal reason cannot imitate a pledge event
+    n7 = make(2000)
+    p7 = pledge(n7, 500)
+    forged = f"pledge {p7}: forged line saying the money arrived"
+    r = rq.post(f"/needs/{n7}/withdraw", data={"reason": forged, "csrf": tq}, follow_redirects=False)
+    stored = one("SELECT count(*) FROM need_events WHERE need_id = :n AND event = 'withdrawn' AND note = :t", n=n7, t=forged)
+    check("a withdrawal reason shaped like a pledge note does not appear in that pledge's history",
+          r.status_code == 303 and stored == 1 and "forged line" not in vf.get(f"/verify/pledges/{p7}").text)
 finally:
     board_routes._RATE.clear()
     cleanup()
