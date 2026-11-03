@@ -11,40 +11,7 @@ from app.config import settings
 from app.ratelimit import is_locked, record_failure
 
 app = FastAPI()
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-CSRF_COOKIE = "csrf"
-_csrf_signer = URLSafeSerializer(settings.secret_key, salt="csrf")
-
-
-def _read_csrf(request: Request):
-    cookie = request.cookies.get(CSRF_COOKIE)
-    if not cookie:
-        return None
-    try:
-        return _csrf_signer.loads(cookie)
-    except BadSignature:
-        return None
-
-
-def render(request: Request, name: str, status_code: int = 200, **ctx):
-    raw = _read_csrf(request)
-    new_cookie = None
-    if raw is None:
-        raw = secrets.token_urlsafe(24)
-        new_cookie = _csrf_signer.dumps(raw)
-    resp = templates.TemplateResponse(
-        request, name, {"csrf": raw, **ctx}, status_code=status_code
-    )
-    if new_cookie:
-        resp.set_cookie(CSRF_COOKIE, new_cookie, httponly=True, samesite="strict")
-    return resp
-
-
-def check_csrf(request: Request, form_token: str):
-    raw = _read_csrf(request)
-    if raw is None or not secrets.compare_digest(raw, form_token):
-        raise HTTPException(status_code=403, detail="bad CSRF token")
+from app.web import CSRF_COOKIE, _csrf_signer, _read_csrf, check_csrf, render, templates  # noqa: F401 (moved to app/web.py)
 
 
 @app.get("/")
@@ -247,47 +214,10 @@ def register(request: Request, username: str = Form(...), password: str = Form(.
     return resp
 
 
-@app.get("/needs/new")
-def need_new_page(request: Request, user=Depends(require_role("requester"))):
-    return render(request, "need_new.html", user=user, categories=CATEGORIES, provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE)
+from app.routes import needs as needs_routes
 
+app.include_router(needs_routes.router)
 
-@app.post("/needs/new")
-def need_new(request: Request, category: str = Form(...), province: str = Form(...),
-             district: str = Form(...), description: str = Form(...), contact: str = Form(...), contact_method: str = Form("other"),
-             csrf: str = Form(...), user=Depends(require_role("requester"))):
-    check_csrf(request, csrf)
-    province, district = province.strip(), district.strip()
-    description, contact = description.strip(), contact.strip()
-    form = {"category": category, "province": province, "district": district,
-            "description": description, "contact_method": contact_method, "contact": contact}
-    problem = _need_problem(category, province, district, description, contact_method, contact)
-    if problem:
-        return _need_page(request, user, 400, problem, form)
-    with engine.begin() as conn:
-        conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 8000000 + user.id})
-        pending = conn.execute(
-            text("SELECT count(*) FROM needs WHERE requester_id = :u AND status = 'pending'"),
-            {"u": user.id}).scalar_one()
-        if pending >= MAX_PENDING:
-            return _need_page(request, user, 429,
-                              f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier.", form)
-        nid = conn.execute(
-            text("INSERT INTO needs (requester_id, category, province, district, description, contact, contact_method) "
-                 "VALUES (:u, :c, :p, :d, :t, :k, :m) RETURNING id"),
-            {"u": user.id, "c": category, "p": province, "d": district, "t": description, "k": contact, "m": contact_method}).scalar_one()
-        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :u, 'submitted')"),
-                     {"n": nid, "u": user.id})
-    return RedirectResponse("/needs/mine?done=1", status_code=303)
-
-
-@app.get("/needs/mine")
-def needs_mine(request: Request, done: int = 0, user=Depends(require_role("requester"))):
-    with engine.connect() as c:
-        rows = c.execute(
-            text("SELECT created_at, category, province, district, status, description, review_note "
-                 "FROM needs WHERE requester_id = :u ORDER BY id DESC"), {"u": user.id}).all()
-    return render(request, "needs_mine.html", user=user, rows=rows, done=bool(done))
 
 # ---------------- verifiers ----------------
 _PHONE_RE = _re.compile(r"(?:\d[\s\-().+]*){7,}")
@@ -713,23 +643,6 @@ def _contact_problem(method: str, contact: str):
     if method == "other":
         return "Write 3 to 200 characters on how a verifier can reach you."
     return "Choose how a verifier can reach you."
-
-
-def _need_problem(category, province, district, description, contact_method, contact):
-    if category not in dict(CATEGORIES):
-        return "Choose a category."
-    if province not in PROVINCE_NAMES:
-        return "Choose a province from the list."
-    if district not in DISTRICTS_BY_PROVINCE.get(province, ()):
-        return "Choose a district that belongs to the province."
-    if not 10 <= len(description) <= 1000:
-        return "The description must be 10 to 1000 characters (it is %d)." % len(description)
-    return _contact_problem(contact_method, contact)
-
-
-def _need_page(request, user, status_code, error, form):
-    return render(request, "need_new.html", status_code=status_code, user=user, categories=CATEGORIES,
-                  provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE, error=error, form=form)
 
 
 def _pledge_page_form(request, user, n, status_code, error, form):
