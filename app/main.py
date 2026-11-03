@@ -1,17 +1,13 @@
-import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
-from itsdangerous import BadSignature, URLSafeSerializer
 
 from app.auth import COOKIE, MAX_AGE, authenticate, current_user, make_session
-from app.config import settings
 from app.ratelimit import is_locked, record_failure
 
 app = FastAPI()
-from app.web import CSRF_COOKIE, _csrf_signer, _read_csrf, check_csrf, render, templates  # noqa: F401 (moved to app/web.py)
+from app.web import check_csrf, render
 
 
 @app.get("/")
@@ -67,13 +63,10 @@ from fastapi import Depends
 from sqlalchemy import text
 
 from app.auth import require_role
-from app.budget import BudgetExhausted
 from app.db import engine
 from app.routes.analytics import budgets as _budgets
 
 
-import json
-from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.exc import IntegrityError
 
@@ -158,14 +151,6 @@ from app.ratelimit import record_registration, registration_blocked
 
 SELF_ROLES = ("requester", "supporter")
 USERNAME_RE = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,29}$")
-CATEGORIES = [("baby_child", "Baby and child"), ("education", "Education"),
-              ("household", "Household goods"), ("electronics", "Electronics"),
-              ("clothing", "Clothing"), ("culture_art", "Culture and art"),
-              ("health", "Health"), ("street_animals", "Street animals"),
-              ("sports", "Sports"), ("hygiene", "Cleaning and hygiene")]
-MAX_PENDING = 3
-from app.districts import DISTRICTS_BY_PROVINCE
-from app.provinces import PROVINCE_NAMES, PROVINCES
 
 
 def _client_ip(request: Request) -> str:
