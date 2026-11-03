@@ -1,4 +1,4 @@
-"""Requester pages: post a need, see my needs, withdraw a need with a reason."""
+"""Requester pages: post a need, see my needs, withdraw a need with a reason, confirm or dispute a pledge marked sent."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
@@ -75,8 +75,17 @@ def need_new(request: Request, purpose: str = Form(""), medical_location: str = 
     return RedirectResponse("/needs/mine?done=1", status_code=303)
 
 
-def _mine_page(request, user, status_code=200, done=False, withdrawn=False, error=None, open_id=None, reason=""):
+RECEIPT_TEXT = {"sent": "The donor says it was sent", "disputed": "You said it did not arrive. A verifier is looking at it",
+                "confirmed": "You confirmed it arrived"}
+
+
+def _mine_page(request, user, status_code=200, done=False, withdrawn=False, received=False, disputed=False, error=None,
+               open_id=None, reason="", open_pid=None, dispute_reason=""):
     with engine.connect() as c:
+        sent = c.execute(text(
+            "SELECT p.id, p.need_id, p.status, p.amount_try, p.amount_need, p.sent_at, n.currency FROM pledges p "
+            "JOIN needs n ON n.id = p.need_id WHERE n.requester_id = :u AND p.status IN ('sent', 'disputed', 'confirmed') "
+            "ORDER BY p.id"), {"u": user.id}).all()
         rows = c.execute(text(
             "SELECT n.id, n.created_at, n.purpose, n.medical_location, n.province, n.district, n.currency, n.goal, "
             "n.status, n.description, n.review_note, n.withdrawn_reason, "
@@ -86,6 +95,11 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, erro
             "count(DISTINCT supporter_id) AS donors FROM pledges "
             "WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed') GROUP BY need_id) p ON p.need_id = n.id "
             "WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
+    by_need = {}
+    for p in sent:
+        by_need.setdefault(p.need_id, []).append({
+            "id": p.id, "sent": p.sent_at.strftime("%Y-%m-%d"), "status": RECEIPT_TEXT[p.status], "open": p.status == "sent",
+            "amount": money(p.amount_try, "TRY") + (f" (about {money(p.amount_need, 'EUR')})" if p.currency == "EUR" else "")})
     shown = []
     for r in rows:
         funding = ""
@@ -99,14 +113,64 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, erro
                       "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency),
                       "status": STATUS_TEXT[r.status], "funding": funding, "description": r.description,
                       "review_note": r.review_note, "withdrawn_reason": r.withdrawn_reason,
-                      "can_withdraw": r.status in ("pending", "published")})
+                      "can_withdraw": r.status in ("pending", "published"), "pledges": by_need.get(r.id, [])})
     return render(request, "needs_mine.html", status_code=status_code, user=user, rows=shown, done=done,
-                  withdrawn=withdrawn, error=error, open_id=open_id, reason=reason)
+                  withdrawn=withdrawn, received=received, disputed=disputed, error=error, open_id=open_id, reason=reason,
+                  open_pid=open_pid, dispute_reason=dispute_reason)
 
 
 @router.get("/needs/mine")
-def needs_mine(request: Request, done: int = 0, withdrawn: int = 0, user=Depends(require_role("requester"))):
-    return _mine_page(request, user, done=bool(done), withdrawn=bool(withdrawn))
+def needs_mine(request: Request, done: int = 0, withdrawn: int = 0, received: int = 0, disputed: int = 0,
+               user=Depends(require_role("requester"))):
+    return _mine_page(request, user, done=bool(done), withdrawn=bool(withdrawn), received=bool(received), disputed=bool(disputed))
+
+
+def _my_pledge_status(pid: int, user):
+    """The status of a pledge to one of this requester's needs, or a 404 when it is not theirs."""
+    with engine.connect() as c:
+        st = c.execute(text("SELECT p.status FROM pledges p JOIN needs n ON n.id = p.need_id WHERE p.id = :p AND n.requester_id = :u"),
+                       {"p": pid, "u": user.id}).scalar()
+    if st is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return st
+
+
+def _receipt(user, pid: int, new: str, event: str, note: str) -> bool:
+    """Move a sent pledge to confirmed or disputed. False when it is no longer sent."""
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("UPDATE pledges SET status = :s WHERE id = :p AND status = 'sent' "
+                 "AND need_id IN (SELECT id FROM needs WHERE requester_id = :u) RETURNING need_id"),
+            {"s": new, "p": pid, "u": user.id}).one_or_none()
+        if row is None:
+            return False
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :u, :e, :t)"),
+                     {"n": row.need_id, "u": user.id, "e": event, "t": note})
+    return True
+
+
+@router.post("/needs/pledges/{pid}/confirm")
+def pledge_confirm(request: Request, pid: int, csrf: str = Form(...), user=Depends(require_role("requester"))):
+    check_csrf(request, csrf)
+    _my_pledge_status(pid, user)
+    if not _receipt(user, pid, "confirmed", "receipt_confirmed", f"pledge {pid}"):
+        return _mine_page(request, user, 409, error="This pledge has already been answered. Nothing was changed.")
+    return RedirectResponse("/needs/mine?received=1", status_code=303)
+
+
+@router.post("/needs/pledges/{pid}/dispute")
+def pledge_dispute(request: Request, pid: int, reason: str = Form(""), csrf: str = Form(...),
+                   user=Depends(require_role("requester"))):
+    check_csrf(request, csrf)
+    reason = reason.strip()
+    if _my_pledge_status(pid, user) != "sent":
+        return _mine_page(request, user, 409, error="This pledge has already been answered. Nothing was changed.")
+    if not 10 <= len(reason) <= 450:
+        return _mine_page(request, user, 400, error="Say in 10 to 450 characters what you checked. Only verifiers see it. Nothing was changed.",
+                          open_pid=pid, dispute_reason=reason)
+    if not _receipt(user, pid, "disputed", "receipt_disputed", f"pledge {pid}: {reason}"):
+        return _mine_page(request, user, 409, error="This pledge has already been answered. Nothing was changed.")
+    return RedirectResponse("/needs/mine?disputed=1", status_code=303)
 
 
 @router.post("/needs/{nid}/withdraw")

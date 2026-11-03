@@ -4,6 +4,8 @@
   <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/new">Post a need</a></p>
   {% if done %}<p><strong>Submitted. A verifier will review it.</strong></p>{% endif %}
   {% if withdrawn %}<p><strong>Withdrawn. The need is off the board.</strong></p>{% endif %}
+  {% if received %}<p><strong>Thank you. The pledge now counts as confirmed.</strong></p>{% endif %}
+  {% if disputed %}<p><strong>Noted. A verifier will contact you and the donor.</strong></p>{% endif %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <h3>My needs</h3>
   {% if not rows %}<p>You have not posted a need yet.</p>{% else %}
@@ -28,6 +30,27 @@
         {% endif %}
       </td>
     </tr>
+    {% if r.pledges %}
+    <tr><td></td><td colspan="5">
+      <strong>Money donors say they sent</strong>. Check your account, then say whether it arrived.
+      <table>
+        <tr><th>Sent on</th><th>Amount</th><th>Status</th><th></th></tr>
+        {% for p in r.pledges %}
+        <tr data-pledge="{{ p.id }}"><td style="white-space: nowrap">{{ p.sent }}</td><td>{{ p.amount }}</td><td>{{ p.status }}</td>
+          <td>{% if p.open %}
+            <form method="post" action="/needs/pledges/{{ p.id }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">It arrived</button></form>
+            <details{% if open_pid == p.id %} open{% endif %}><summary>It did not arrive</summary>
+              <form method="post" action="/needs/pledges/{{ p.id }}/dispute">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label>What did you check? (10 to 450 characters, seen only by verifiers)<br><textarea name="reason" rows="3" cols="50" minlength="10" maxlength="450" required>{% if open_pid == p.id %}{{ dispute_reason }}{% endif %}</textarea></label>
+                <button type="submit">Report it</button>
+              </form>
+            </details>
+          {% endif %}</td></tr>
+        {% endfor %}
+      </table>
+    </td></tr>
+    {% endif %}
     {% endfor %}
   </table>
   {% endif %}

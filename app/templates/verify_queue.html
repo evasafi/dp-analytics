@@ -4,6 +4,7 @@
   <p>Signed in as <strong>{{ user.username }}</strong> (verifier).</p>
   {% if done == "approved" %}<p><strong>Approved and published.</strong></p>{% endif %}
   {% if done == "rejected" %}<p><strong>Rejected. The requester will see your reason.</strong></p>{% endif %}
+  {% if done == "resolved" %}<p><strong>Dispute settled.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>
   {% if not rows %}<p>Nothing is waiting.</p>{% else %}
   <table>
@@ -11,6 +12,26 @@
     {% for r in rows %}
     <tr><td style="white-space: nowrap">{{ r.created }}</td><td>{{ r.label }}</td><td>{{ r.place }}</td><td>{{ r.goal }}</td>
         <td>{{ r.snippet }}</td><td><a href="/verify/{{ r.id }}">review</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Disputed pledges</h3>
+  <p class="note">The donor marked these as sent and the requester says the money did not arrive. Contact both, then settle it.</p>
+  {% if not disputed %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>Sent on</th><th>For</th><th>Place</th><th>Amount</th><th></th></tr>
+    {% for d in disputed %}
+    <tr data-pledge="{{ d.id }}"><td style="white-space: nowrap">{{ d.sent }}</td><td>{{ d.label }}</td><td>{{ d.place }}</td><td>{{ d.amount }}</td><td><a href="/verify/pledges/{{ d.id }}">open</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Sent but not answered for {{ days }} days</h3>
+  <p class="note">The donor marked these as sent and the requester has not said whether the money arrived. Nothing changes on its own: follow up with the requester.</p>
+  {% if not unanswered %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>Sent on</th><th>For</th><th>Place</th><th>Amount</th><th></th></tr>
+    {% for d in unanswered %}
+    <tr data-pledge="{{ d.id }}"><td style="white-space: nowrap">{{ d.sent }}</td><td>{{ d.label }}</td><td>{{ d.place }}</td><td>{{ d.amount }}</td><td><a href="/verify/pledges/{{ d.id }}">open</a></td></tr>
     {% endfor %}
   </table>
   {% endif %}

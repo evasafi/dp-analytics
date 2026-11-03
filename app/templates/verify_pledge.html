@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Pledge {{ p.id }}{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/verify">Back to the queue</a></p>
+  <h3>Pledge {{ p.id }} to need {{ p.nid }}: {{ label }} in {{ p.district }}, {{ p.province }}</h3>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <table>
+    <tr><th>Amount</th><td>{{ amount }}</td></tr>
+    <tr><th>Pledged</th><td>{{ p.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+    <tr><th>Marked as sent</th><td>{{ p.sent_at.strftime("%Y-%m-%d %H:%M") if p.sent_at else "not yet" }}</td></tr>
+    <tr><th>Pledge status</th><td>{{ p.status }}</td></tr>
+    <tr><th>Need status</th><td>{{ need_status }} (<a href="/verify/{{ p.nid }}">open the need</a>)</td></tr>
+    <tr><th>Donor (private)</th><td>{{ p.donor }}, {{ p.d_method }}: {{ p.d_contact or "no contact given" }}</td></tr>
+    <tr><th>Requester (private)</th><td>{{ p.requester }}, {{ p.r_method }}: {{ p.r_contact }}</td></tr>
+    <tr><th>Paid into (private)</th><td>{{ p.payee_name }}, {{ iban }}</td></tr>
+  </table>
+  <h3>What happened</h3>
+  {% if not events %}<p>No events recorded for this pledge.</p>{% else %}
+  <table>
+    <tr><th>When</th><th>What</th><th>Who</th><th>Note</th></tr>
+    {% for e in events %}
+    <tr><td style="white-space: nowrap">{{ e.ts }}</td><td>{{ e.event }}</td><td>{{ e.who }}</td><td>{{ e.note }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% if p.status == "disputed" %}
+  <h3>Settle the dispute</h3>
+  <p class="note">Ask the donor for proof of the transfer and the requester to check the account again, outside the platform. "It arrived" counts the money as confirmed and may complete the need. "It did not arrive" cancels the pledge and opens the amount again.</p>
+  <form method="post" action="/verify/pledges/{{ p.id }}/resolve">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label><input type="radio" name="outcome" value="arrived" required> It arrived</label>
+       <label><input type="radio" name="outcome" value="not_arrived"> It did not arrive</label></p>
+    <p><textarea name="note" rows="3" cols="60" minlength="10" maxlength="450" placeholder="What you checked (10 to 450 characters, seen only by verifiers)." required>{{ note }}</textarea></p>
+    <p><button type="submit">Settle</button></p>
+  </form>
+  {% endif %}
+{% endblock %}
