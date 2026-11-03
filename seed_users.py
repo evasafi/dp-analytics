@@ -1,4 +1,4 @@
-﻿import getpass
+import getpass
 
 from sqlalchemy import text
 
@@ -6,7 +6,6 @@ from app.auth import hash_password
 from app.db import engine
 
 ACCOUNTS = [
-    ("field1", "field_agent"),
     ("analyst1", "analyst"),
     ("admin1", "admin"),
 ]
