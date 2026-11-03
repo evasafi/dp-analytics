@@ -294,7 +294,11 @@ try:
     check("when the need is withdrawn, an unsent pledge is cancelled and hides the account; a sent one keeps it",
           pstat(p8a) == "cancelled" and IBAN_SHOWN not in ra and pstat(p8b) == "sent" and IBAN_SHOWN in rb
           and "Need: Withdrawn" in ra and "Need: Withdrawn" in rb)
-    check("the withdrawal reason is not shown to the donor", "moved in with relatives" not in page)
+    reason_line = "The requester withdrew this need: The family moved in with relatives."
+    check("a donor with pledges on the withdrawn need sees the reason on those rows", reason_line in ra and reason_line in rb)
+    check("the reason is not on that donor's rows for other needs", row_of(page, pe) != "" and "moved in with relatives" not in row_of(page, pe))
+    check("a donor with pledges only on other needs does not see it",
+          s2.get("/support").text.count("<tr data-pledge=") > 0 and "moved in with relatives" not in s2.get("/support").text)
 
     # ---- the limit on unconfirmed pledges
     n9 = make(goal=300000, purpose="other")
