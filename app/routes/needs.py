@@ -8,7 +8,7 @@ from app.auth import require_role
 from app.db import engine
 from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCES
-from app.reference import (EVENTS, MAX_PENDING, MEDICAL_LOCATIONS, PURPOSES, STATUS_TEXT, load_limits, money,
+from app.reference import (EVENTS, MAX_PENDING, PURPOSES, STATUS_TEXT, load_limits, money,
                            need_label)
 from app.validation import need_problems, normalize_iban, public_text_problem
 from app.web import check_csrf, render
