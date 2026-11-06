@@ -29,7 +29,7 @@
         <option value="other"{% if f.get('contact_method', 'other') == 'other' %} selected{% endif %}>Other</option>
       </select></label>
       <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
-    <p class="note">Your contact is shown only to verifiers, never to the requester or on the board.</p>
+    <p class="note">Your contact is shown only to verifiers, never to the requester or on the board. Your bank will show your name and account to the requester when the money arrives, and this site cannot hide that.</p>
     <h3>Before you pledge</h3>
     <ul>
       <li>After you pledge you see the account holder and IBAN. You send the money yourself, straight to that account. This site never holds it.</li>
