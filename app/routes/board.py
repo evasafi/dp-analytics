@@ -64,9 +64,9 @@ def _card(r):
     prom = min(100.0, float(r.promised) / goal * 100)
     parts = []
     if r.donors:
-        parts.append("Confirmed " + money(r.confirmed, r.currency))
+        parts.append("Confirmed " + money(r.confirmed, r.currency) if r.confirmed else "Nothing confirmed yet")
         if r.promised - r.confirmed > 0:
-            parts.append("promised %s more" % money(r.promised - r.confirmed, r.currency))
+            parts.append(("promised %s more" if r.confirmed else "%s promised") % money(r.promised - r.confirmed, r.currency))
         parts.append("%d donor%s" % (r.donors, "" if r.donors == 1 else "s"))
     return {"id": r.id, "month": r.month, "label": need_label(r.purpose, r.medical_location),
             "event": EVENT_LABELS.get(r.event), "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency),

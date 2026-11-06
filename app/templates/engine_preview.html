@@ -8,6 +8,7 @@
     <li>Cost: <strong>{{ est.epsilon }}</strong> of the privacy budget</li>
     <li>Cells returned: {{ est.cells }}</li>
     <li>Typical error: {{ est.typical_error }}</li>
+    <li>A cell much smaller than the typical error is mostly noise, and "suppressed" does not mean empty: it means the noise was larger than the count.</li>
     <li>Cells with a noisy value below {{ est.suppress_below }} are shown as "suppressed"</li>
     <li>Budget now: {{ "%.1f"|format(remaining) }}, after this query: {{ "%.1f"|format(after) }}</li>
   </ul>

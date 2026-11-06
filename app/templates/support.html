@@ -14,7 +14,7 @@
     <tr data-pledge="{{ r.id }}">
       <td style="white-space: nowrap">{{ r.created }}</td><td><a href="/board/{{ r.nid }}">{{ r.label }}</a></td><td>{{ r.place }}</td><td>{{ r.amount }}</td>
       <td>{{ r.status }}{% if r.expires %}<br>by {{ r.expires }}{% endif %}{% if r.need_status %}<br><em>Need: {{ r.need_status }}</em>{% endif %}{% if r.withdrawn_reason %}<br><em>The requester withdrew this need: {{ r.withdrawn_reason }}</em>{% endif %}</td>
-      <td>{% if r.iban %}{{ r.payee }}<br><code>{{ r.iban }}</code>{% endif %}
+      <td>{% if r.iban %}{{ r.payee }}<br><code style="white-space: nowrap">{{ r.iban }}</code>{% endif %}
         {% if r.pledged %}
         <form method="post" action="/support/{{ r.id }}/sent"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">I have sent it</button></form>
         <form method="post" action="/support/{{ r.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>

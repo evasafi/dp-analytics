@@ -20,7 +20,7 @@
   </table>
   {% if n.status == "pending" %}
   <h3>Approve</h3>
-  <p class="note">Donors will send money straight to the account above, so do both checks yourself, outside the platform, before you approve.</p>
+  <p class="note">Donors will send money straight to the account above, so do both checks yourself, outside the platform, before you approve. To check the document, contact the requester using the details above and ask to see it (a bill, an invoice or a quote). This system does not store documents.</p>
   <form method="post" action="/verify/{{ n.id }}/approve">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <p><label><input type="checkbox" name="check_payee" value="on"{% if payee_ok %} checked{% endif %}> The account holder's name matches the requester's identity.</label><br>

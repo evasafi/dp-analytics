@@ -58,11 +58,11 @@ def _open_try(n, s) -> int:
     return int(left * s.eur_try_rate) if n.currency == "EUR" else int(left)
 
 
-def _pledge_page(request, user, n, s, status_code=200, error=None, form=None):
+def _pledge_page(request, user, n, s, status_code=200, error=None, form=None, errors=None):
     open_try = _open_try(n, s)
     return render(request, "pledge_form.html", status_code=status_code, user=user, c=_card(n), open_try=open_try,
                   suggestion=_suggestion(n, s, open_try),
-                  floor=s.pledge_floor, days=s.pledge_expiry_days, rate=f"{s.eur_try_rate:.0f}", error=error, form=form or {})
+                  floor=s.pledge_floor, days=s.pledge_expiry_days, rate=f"{s.eur_try_rate:.0f}", error=error, form=form or {}, errors=errors or [])
 
 
 def _support_page(request, user, status_code=200, done="", error=None):
@@ -127,7 +127,7 @@ def pledge(request: Request, nid: int, amount: str = Form(""), ack: str = Form("
     if problem:
         errors.append(problem)
     if errors:
-        return _pledge_page(request, user, n, s, 400, " ".join(errors) + " Nothing was saved.", form)
+        return _pledge_page(request, user, n, s, 400, None, form, errors=errors)
     try:
         with engine.begin() as conn:
             pid = conn.execute(

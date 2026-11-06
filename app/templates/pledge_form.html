@@ -10,6 +10,7 @@
   <p>{{ c.funding }}</p>
   <p>{{ c.text }}</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if errors %}<div class="error"><p><strong>Nothing was saved.</strong> Fix these and try again:</p><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   {% if open_try < floor %}
   <p><strong>This need is fully pledged for now.</strong> If a pledge expires or is cancelled, the amount opens again.</p>
   {% else %}

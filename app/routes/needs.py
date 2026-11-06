@@ -104,9 +104,9 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
     for r in rows:
         funding = ""
         if r.donors:
-            parts = ["Confirmed " + money(r.confirmed, r.currency)]
+            parts = ["Confirmed " + money(r.confirmed, r.currency) if r.confirmed else "Nothing confirmed yet"]
             if r.promised - r.confirmed > 0:
-                parts.append("promised %s more" % money(r.promised - r.confirmed, r.currency))
+                parts.append(("promised %s more" if r.confirmed else "%s promised") % money(r.promised - r.confirmed, r.currency))
             parts.append("%d donor%s" % (r.donors, "" if r.donors == 1 else "s"))
             funding = ", ".join(parts) + "."
         shown.append({"id": r.id, "created": r.created_at.strftime("%Y-%m-%d"), "label": need_label(r.purpose, r.medical_location),

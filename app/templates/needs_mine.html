@@ -33,7 +33,7 @@
     </tr>
     {% if r.pledges %}
     <tr><td></td><td colspan="5">
-      <strong>Money donors say they sent</strong>. Check your account, then say whether it arrived.
+      {% if r.pledges|selectattr('open')|list %}<strong>Money donors say they sent</strong>. Check your account, then say whether it arrived.{% else %}<strong>Money donors sent</strong>. All of it has been answered.{% endif %}
       <table>
         <tr><th>Sent on</th><th>Amount</th><th>Status</th><th></th></tr>
         {% for p in r.pledges %}

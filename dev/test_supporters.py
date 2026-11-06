@@ -195,7 +195,7 @@ try:
     check("another supporter does not see that account", PAYEE not in s2.get("/support").text and IBAN_SHOWN not in s2.get("/support").text)
     board_routes._RATE.clear()
     pub = anon.get("/board").text + anon.get(f"/board/{n1}").text
-    check("the board counts the pledge as promised", "promised 12,000 TRY more, 1 donor." in pub)
+    check("the board counts the pledge as promised", "promised 12,000 TRY more, 1 donor." in pub or "12,000 TRY promised, 1 donor." in pub)
     check("the donor's contact appears on no public page and not on the requester's page",
           DONOR not in pub and DONOR not in others["sp_req"][0].get("/needs/mine").text)
     check("the form now shows the smaller open amount", "36,000 TRY" in s2.get(f"/support/pledge/{n1}").text)
