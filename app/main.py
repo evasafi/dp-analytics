@@ -203,3 +203,32 @@ app.include_router(support_routes.router)
 from app.routes import analytics as analytics_routes
 
 app.include_router(analytics_routes.router)
+
+
+# ---------------- friendly error pages for browsers ----------------
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.web import templates as _error_templates
+
+_ERROR_PAGES = {
+    401: ("Please sign in", "This page is only for signed-in people. Sign in, or create an account, and then try again.",
+          [("Sign in", "/login"), ("Create an account", "/register"), ("Back to the board", "/board")]),
+    403: ("This page is for a different kind of account", "You are signed in, but this page belongs to another role. Requesters, supporters and verifiers each have their own pages.",
+          [("Go to my page", "/"), ("Back to the board", "/board")]),
+    404: ("Page not found", "We could not find that page. It may not exist, or it may not be public.",
+          [("Back to the board", "/board")]),
+}
+_FORM_EXPIRED = ("This form expired", "The page you submitted from is out of date. Go back, reload it and try again.",
+                 [("Back to the board", "/board")])
+
+
+@app.exception_handler(StarletteHTTPException)
+async def friendly_errors(request: Request, exc: StarletteHTTPException):
+    """Browsers get a readable page. Anything else (tests, scripts) still gets the same JSON and status code as before.
+    The page is rendered without a CSRF cookie, so public pages keep setting no cookies."""
+    if "text/html" in request.headers.get("accept", "") and exc.status_code in _ERROR_PAGES:
+        heading, message, links = _FORM_EXPIRED if exc.detail == "bad CSRF token" else _ERROR_PAGES[exc.status_code]
+        return _error_templates.TemplateResponse(request, "error.html", {"heading": heading, "message": message, "links": links},
+                                                 status_code=exc.status_code)
+    return await http_exception_handler(request, exc)

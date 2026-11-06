@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+  <h3>{{ heading }}</h3>
+  <p>{{ message }}</p>
+  <p>{% for label, url in links %}<a href="{{ url }}">{{ label }}</a>{% if not loop.last %} | {% endif %}{% endfor %}</p>
+{% endblock %}

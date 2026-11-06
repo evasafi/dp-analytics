@@ -48,7 +48,7 @@
     <fieldset>
       <legend>Where donors send the money</legend>
       <p><label>Account holder name <input name="payee_name" maxlength="100" value="{{ f.get('payee_name', '') }}" required></label></p>
-      <p><label>IBAN <input name="iban" maxlength="40" placeholder="TR00 0000 0000 0000 0000 0000 00" value="{{ f.get('iban', '') }}" required></label></p>
+      <p><label>IBAN <input name="iban" size="34" maxlength="40" placeholder="TR00 0000 0000 0000 0000 0000 00" value="{{ f.get('iban', '') }}" required></label></p>
       <p class="note">Donors send money straight to this account after they pledge. You cannot change it after posting: to correct a mistake, withdraw the need with a reason and post it again. A verifier checks that the account is yours.</p>
     </fieldset>
     <p><button type="submit">Submit for review</button></p>
