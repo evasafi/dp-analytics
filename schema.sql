@@ -395,6 +395,13 @@ LEFT JOIN (
     GROUP BY need_id) p ON p.need_id = n.id
 WHERE n.status = 'published';
 
+-- Front-page totals: counts and sums over the whole platform, nothing about any one need or person.
+CREATE VIEW public_stats AS
+SELECT (SELECT count(*) FROM needs WHERE status = 'published')                         AS open_needs,
+       (SELECT count(*) FROM needs WHERE status = 'fulfilled')                         AS fulfilled_needs,
+       COALESCE((SELECT sum(amount_try) FROM pledges WHERE status = 'confirmed'), 0)   AS confirmed_try,
+       (SELECT count(DISTINCT supporter_id) FROM pledges WHERE status = 'confirmed')   AS donors;
+
 -- What analytics may read: verified needs, safe columns only. The requester id, cast to
 -- text, is the person key for the per-person cap. Nothing private is listed here.
 CREATE VIEW needs_analytics AS
@@ -449,7 +456,7 @@ GRANT EXECUTE ON FUNCTION expire_pledges() TO dp_app;
 REVOKE DELETE, TRUNCATE ON needs, pledges FROM dp_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON need_events FROM dp_app;
 
-GRANT SELECT ON public_needs, needs_analytics, synth_analytics, suggestion_stats TO dp_app;
+GRANT SELECT ON public_needs, public_stats, needs_analytics, synth_analytics, suggestion_stats TO dp_app;
 GRANT INSERT ON needs_synth TO dp_app;
 GRANT USAGE ON SEQUENCE needs_synth_id_seq TO dp_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON needs_synth FROM dp_app;

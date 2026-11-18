@@ -6,6 +6,7 @@
   {% else %}<p><a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>{% endif %}
   <h3>Needs board</h3>
   <p class="note">Every need here was reviewed by a verifier before it appeared. To pledge, create a supporter account. You send money straight to the requester's account, and nothing passes through this site.</p>
+  <p class="note" id="stats">So far: <strong>{{ stats.fulfilled }}</strong> need{{ "" if stats.fulfilled == 1 else "s" }} fulfilled, <strong>{{ stats.confirmed }}</strong> confirmed by requesters, from <strong>{{ stats.donors }}</strong> donor{{ "" if stats.donors == 1 else "s" }}. Every figure is demo data.</p>
   <form method="get" action="/board">
     <label>Purpose <select name="purpose"><option value="">All</option>
       {% for key, label in purposes %}<option value="{{ key }}" {% if key == purpose %}selected{% endif %}>{{ label }}</option>{% endfor %}

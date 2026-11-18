@@ -1,7 +1,7 @@
 """The public board: open needs with their funding, one page per need, and the map data.
 
 Sign-in is optional. A visitor with a valid session sees their name in the header; the board never sets a cookie.
-It reads only the public_needs view, so a private column cannot reach these pages.
+It reads only the public_needs and public_stats views, so a private column cannot reach these pages.
 A limit of 60 requests a minute per address is kept in memory.
 """
 import threading
@@ -84,6 +84,10 @@ def _card(r):
             "funding": (", ".join(parts) + ".") if parts else "No pledges yet."}
 
 
+def _stats_card(r):
+    return {"fulfilled": r.fulfilled_needs, "confirmed": money(r.confirmed_try, "TRY"), "donors": r.donors}
+
+
 @router.get("/board")
 def board(request: Request, purpose: str = "", province: str = "", sort: str = "new",
           page: int = Query(1, ge=1, le=1000)):
@@ -104,6 +108,7 @@ def board(request: Request, purpose: str = "", province: str = "", sort: str = "
         total = c.execute(text(f"SELECT count(*) FROM public_needs WHERE {w}"), params).scalar_one()
         rows = c.execute(text(f"SELECT {COLUMNS} FROM public_needs WHERE {w} ORDER BY {SORTS[sort]} LIMIT :lim OFFSET :off"),
                          {**params, "lim": PAGE_SIZE, "off": (page - 1) * PAGE_SIZE}).all()
+        stats = _stats_card(c.execute(text("SELECT fulfilled_needs, confirmed_try, donors FROM public_stats")).one())
 
     def link(n):
         q = {k: v for k, v in (("purpose", purpose), ("province", province), ("sort", sort if sort != "new" else "")) if v}
@@ -112,7 +117,7 @@ def board(request: Request, purpose: str = "", province: str = "", sort: str = "
         return "/board" + ("?" + urlencode(q) if q else "")
 
     return templates.TemplateResponse(request, "board.html", {
-        "viewer": _viewer(request), "cards": [_card(r) for r in rows], "total": total, "purpose": purpose, "province": province, "sort": sort,
+        "viewer": _viewer(request), "stats": stats, "cards": [_card(r) for r in rows], "total": total, "purpose": purpose, "province": province, "sort": sort,
         "purposes": PURPOSES, "provinces": PROVINCES, "sorts": SORT_TEXT,
         "prev_url": link(page - 1) if page > 1 else None,
         "next_url": link(page + 1) if page * PAGE_SIZE < total else None})
