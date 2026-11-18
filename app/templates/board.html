@@ -14,6 +14,13 @@
     <label>Province <select name="province"><option value="">All</option>
       {% for code, name, lat, lon in provinces %}<option value="{{ name }}" {% if name == province %}selected{% endif %}>{{ name }}</option>{% endfor %}
     </select></label>
+    <label>Kind <select name="kind"><option value="">All</option>
+      <option value="money" {% if kind == "money" %}selected{% endif %}>Money</option>
+      <option value="item" {% if kind == "item" %}selected{% endif %}>Items</option>
+    </select></label>
+    <label>Item category <select name="category"><option value="">All</option>
+      {% for key, label in categories %}<option value="{{ key }}" {% if key == category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
     <label>Order by <select name="sort">
       {% for key, label in sorts.items() %}<option value="{{ key }}" {% if key == sort %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select></label>
@@ -24,7 +31,7 @@
   <h3>{{ total }} open need{{ "" if total == 1 else "s" }}</h3>
   <p class="note">Dark part of the bar: confirmed by the requester. Hatched part: promised, not yet confirmed.</p>
   {% if not cards %}
-  {% if total == 0 and (purpose or province) %}<p>No open needs match these filters.
+  {% if total == 0 and (purpose or province or kind or category) %}<p>No open needs match these filters.
     {% if purpose and province %}Try <a href="/board?purpose={{ purpose|urlencode }}">all provinces</a>, <a href="/board?province={{ province|urlencode }}">all purposes</a>, or <a href="/board">clear both</a>.
     {% else %}<a href="/board">Show all open needs</a>.{% endif %}</p>
   {% elif total == 0 %}<p>There are no open needs at the moment.</p>
@@ -33,7 +40,7 @@
   {% for c in cards %}
   <article data-need="{{ c.id }}" style="border: 1px solid #d3dae3; border-left: 5px solid {{ '#6d4aa3' if c.euro else '#1d5fa6' }}; padding: .8rem 1rem; margin: .7rem 0">
     <strong><a href="/board/{{ c.id }}">{{ c.label }} in {{ c.place }}</a></strong>{% if c.event %} ({{ c.event }}){% endif %}{% if c.euro %} <em>(euro goal, amounts approximate)</em>{% endif %}
-    <div class="note">Posted {{ c.month }}. Goal {{ c.goal }}.</div>
+    <div class="note">Posted {{ c.month }}. {% if c.item %}Needs {{ c.goal }}.{% else %}Goal {{ c.goal }}.{% endif %}</div>
     {{ ledger(c) }}
     <div>{{ c.funding }}</div>
     <p>{{ c.text }}</p>

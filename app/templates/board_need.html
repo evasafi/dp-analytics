@@ -4,11 +4,22 @@
 {% block content %}
   <p><a href="/board">Back to the board</a>{% if viewer %} | Signed in as <strong>{{ viewer.username }}</strong> ({{ viewer.role }}) | <a href="/me">My page</a>{% else %} | <a href="/login">Sign in</a> | <a href="/register">Create an account</a>{% endif %}</p>
   <h3>{{ c.label }} in {{ c.place }}{% if c.event %} ({{ c.event }}){% endif %}</h3>
-  <p class="note">Posted {{ c.month }}. Goal {{ c.goal }}{% if c.euro %}, about {{ goal_try }} TRY at 1 euro = {{ rate }} lira. This is an estimate: the real amount depends on the exchange rate when money is sent{% endif %}.</p>
+  <p class="note">Posted {{ c.month }}. {% if c.item %}Needs {{ c.goal }}. {{ c.used_text }}. Preferred handover: {{ c.handover_label }}{% else %}Goal {{ c.goal }}{% endif %}{% if c.euro %}, about {{ goal_try }} TRY at 1 euro = {{ rate }} lira. This is an estimate: the real amount depends on the exchange rate when money is sent{% endif %}.</p>
   {{ ledger(c) }}
   <p>{{ c.funding }}</p>
   <p class="note">Dark part of the bar: confirmed by the requester. Hatched part: promised, not yet confirmed.</p>
   <p>{{ c.text }}</p>
+  {% if c.item %}
+  <h3>How giving works</h3>
+  <ol>
+    <li>Offer some or all of the units this household needs.</li>
+    <li>A verifier checks the offer and passes your contact to the requester, who then contacts you to agree the handover. The requester's contact is not shown to you.</li>
+    <li>Hand the item over, preferably in a public place in daylight, and mark it as handed over.</li>
+    <li>The requester confirms they received it, and only then does it count as confirmed.</li>
+  </ol>
+  <p class="note">This site does not see the handover and cannot guarantee anyone's safety. The requester can withdraw a need.</p>
+  <p class="note">Offering items is not open yet.</p>
+  {% else %}
   <h3>How giving works</h3>
   <ol>
     <li>Pledge an amount of {{ floor }} lira or more.</li>
@@ -20,4 +31,5 @@
   {% if not viewer %}<p>You need to <a href="/login">sign in</a> with a supporter account to pledge, or <a href="/register">create one</a>.</p>
   {% elif viewer.role == "supporter" %}<p><a href="/support/pledge/{{ c.id }}">Pledge to this need</a></p>
   {% else %}<p class="note">Pledges are made from supporter accounts. You are signed in as a {{ viewer.role }}.</p>{% endif %}
+  {% endif %}
 {% endblock %}

@@ -27,7 +27,7 @@ CATEGORY_LABELS = {
     "heating": "Heating and fuel",
     "clothing": "Clothing and footwear",
     "bedding": "Bedding and sleeping gear",
-    "kitchen": "Kitchen and household basics",
+    "kitchen": "Kitchen and home basics",
     "hygiene_baby": "Hygiene and baby items",
     "food": "Food parcel",
     "power_comms": "Power and communication",
