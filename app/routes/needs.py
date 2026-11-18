@@ -77,6 +77,8 @@ def need_new(request: Request, purpose: str = Form(""), medical_location: str = 
 
 RECEIPT_TEXT = {"sent": "The donor says it was sent", "disputed": "You said it did not arrive. A verifier is looking at it",
                 "confirmed": "You confirmed it arrived"}
+OUTCOME_TEXT = {"dispute_arrived": "You said it did not arrive. A verifier checked and found it did. It now counts as confirmed",
+                "dispute_not_arrived": "You said it did not arrive. A verifier checked and agreed. The pledge was cancelled"}
 
 
 def _mine_page(request, user, status_code=200, done=False, withdrawn=False, received=False, disputed=False, error=None,
@@ -84,8 +86,13 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
     with engine.connect() as c:
         sent = c.execute(text(
             "SELECT p.id, p.need_id, p.status, p.amount_try, p.amount_need, p.sent_at, n.currency FROM pledges p "
-            "JOIN needs n ON n.id = p.need_id WHERE n.requester_id = :u AND p.status IN ('sent', 'disputed', 'confirmed') "
+            "JOIN needs n ON n.id = p.need_id WHERE n.requester_id = :u AND p.status IN ('sent', 'disputed', 'confirmed', 'cancelled') "
             "ORDER BY p.id"), {"u": user.id}).all()
+        settled = c.execute(text(
+            "SELECT p.id, e.event FROM need_events e JOIN pledges p ON p.need_id = e.need_id "
+            "AND left(e.note, length('pledge ' || p.id || ':')) = 'pledge ' || p.id || ':' "
+            "JOIN needs n ON n.id = p.need_id WHERE n.requester_id = :u "
+            "AND e.event IN ('dispute_arrived', 'dispute_not_arrived')"), {"u": user.id}).all()
         rows = c.execute(text(
             "SELECT n.id, n.created_at, n.purpose, n.medical_location, n.province, n.district, n.currency, n.goal, "
             "n.status, n.description, n.review_note, n.withdrawn_reason, "
@@ -96,9 +103,12 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
             "WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed') GROUP BY need_id) p ON p.need_id = n.id "
             "WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
     by_need = {}
+    outcome = {s.id: s.event for s in settled}
     for p in sent:
+        if p.status == "cancelled" and p.id not in outcome:
+            continue
         by_need.setdefault(p.need_id, []).append({
-            "id": p.id, "sent": p.sent_at.strftime("%Y-%m-%d"), "status": RECEIPT_TEXT[p.status], "open": p.status == "sent",
+            "id": p.id, "sent": p.sent_at.strftime("%Y-%m-%d"), "status": OUTCOME_TEXT.get(outcome.get(p.id)) or RECEIPT_TEXT[p.status], "open": p.status == "sent",
             "amount": money(p.amount_try, "TRY") + (f" (about {money(p.amount_need, 'EUR')})" if p.currency == "EUR" else "")})
     shown = []
     for r in rows:

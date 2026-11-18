@@ -229,6 +229,13 @@ try:
     check("the pledge page shows its history: disputed by the requester, settled by the verifier",
           "Requester says the money did not arrive" in hist and "Verifier settled: the money did not arrive" in hist and "rc_req" in hist and "rc_v" in hist)
 
+    page_pC = rq.get("/needs/mine").text
+    row_pC = row_of(page_pC, pC)
+    check("a pledge cancelled by a verifier stays on the requester page with the outcome and no buttons",
+          "A verifier checked and agreed. The pledge was cancelled" in row_pC and "<button" not in row_pC)
+    check("the verifier note is not shown to the requester",
+          "The donor could not show a transfer receipt." not in page_pC)
+
     # ---- confirmed money completes a need
     n2 = make(500)
     p2 = pledge(n2, 495)
@@ -243,6 +250,12 @@ try:
     r = resolve(vf, tv, p3, outcome="arrived", note="The donor showed the bank receipt; the requester found it.")
     check("'it arrived' after a dispute confirms the pledge and can complete the need",
           r.status_code == 303 and pstat(p3) == "confirmed" and nstat(n3) == "fulfilled" and events(n3, "dispute_arrived") == 1)
+    page_p3 = rq.get("/needs/mine").text
+    row_p3 = row_of(page_p3, p3)
+    check("a dispute settled as arrived shows the outcome instead of claiming the requester confirmed it",
+          "A verifier checked and found it did. It now counts as confirmed" in row_p3 and "You confirmed it arrived" not in row_p3)
+    check("the verifier note is not shown to the requester for an arrived dispute",
+          "The donor showed the bank receipt" not in page_p3)
 
     # ---- two verifiers settling the same dispute at once
     n4 = make(2000)
