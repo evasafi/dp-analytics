@@ -71,6 +71,36 @@ from app.routes.analytics import budgets as _budgets
 from sqlalchemy.exc import IntegrityError
 
 # ---------------- admin routes ----------------
+
+
+def _params_text(p) -> str:
+    # A readable one-line description of an audit-log query: dataset, measure, grouping and filters.
+    if not isinstance(p, dict):
+        return str(p)
+
+    def part(v):
+        if isinstance(v, dict):
+            if {"column", "op", "value"} <= set(v):
+                return f"{v['column']} {v['op']} {v['value']}"
+            return ", ".join(f"{k} {x}" for k, x in v.items())
+        if isinstance(v, (list, tuple)):
+            return ", ".join(part(i) for i in v)
+        return str(v)
+
+    bits = []
+    if "dataset" in p:
+        bits.append("dataset " + part(p["dataset"]))
+    if "measure" in p:
+        bits.append("measure " + part(p["measure"]))
+    if "group_by" in p:
+        bits.append("grouped by " + part(p["group_by"]) if p["group_by"] else "no grouping")
+    if "filters" in p:
+        bits.append("filters: " + part(p["filters"]) if p["filters"] else "no filters")
+    for k in sorted(p):
+        if k not in ("dataset", "measure", "group_by", "filters"):
+            bits.append(f"{k}: {part(p[k])}")
+    return "; ".join(bits)
+
 @app.get("/admin")
 def admin_page(request: Request, user=Depends(require_role("admin"))):
     with engine.connect() as c:
@@ -78,6 +108,8 @@ def admin_page(request: Request, user=Depends(require_role("admin"))):
             "SELECT a.ts, u.username, a.query_type, a.params, a.epsilon_charged, "
             "a.result_hash FROM audit_log a JOIN users u ON u.id = a.user_id "
             "ORDER BY a.id DESC LIMIT 50")).all()
+    rows = [{"ts": r.ts, "username": r.username, "query_type": r.query_type, "params_text": _params_text(r.params),
+             "epsilon_charged": r.epsilon_charged, "result_hash": r.result_hash} for r in rows]
     return render(request, "admin.html", user=user, budgets=_budgets(), rows=rows)
 
 
