@@ -157,7 +157,10 @@ try:
     check("before pledging, the form shows neither the account nor any private detail",
           all(v not in form.text for v in (PAYEE, IBAN, IBAN_SHOWN, *PRIVATE.values())))
     board_routes._RATE.clear()
-    check("the public need page links to the pledge form", f'href="/support/pledge/{n1}"' in anon.get(f"/board/{n1}").text)
+    check("a signed-in supporter's need page links to the pledge form", f'href="/support/pledge/{n1}"' in s1.get(f"/board/{n1}").text)
+    visitor_page = anon.get(f"/board/{n1}").text
+    check("a visitor's need page points to sign-in and has no pledge link",
+          'href="/login"' in visitor_page and f'href="/support/pledge/{n1}"' not in visitor_page)
     hidden = [make("pending"), make("rejected"), make("withdrawn"), make("fulfilled")]
     codes = [s1.get(f"/support/pledge/{h}").status_code for h in hidden] + [s1.get("/support/pledge/99999999").status_code]
     codes += [post_pledge(s1, t1, h, 100).status_code for h in hidden]
