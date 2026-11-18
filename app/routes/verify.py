@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 
+from app import items
 from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
@@ -29,6 +30,10 @@ PLEDGE_LIST = ("SELECT p.id, p.amount_try, p.amount_need, p.sent_at, n.purpose, 
                "n.currency FROM pledges p JOIN needs n ON n.id = p.need_id WHERE {} ORDER BY p.sent_at LIMIT 50")
 
 
+def _units(q) -> str:
+    return f"{q} unit" + ("" if q == 1 else "s")
+
+
 def _pledge_amount(amount_try, amount_need, currency) -> str:
     return money(amount_try, "TRY") + (f" (about {money(amount_need, 'EUR')})" if currency == "EUR" else "")
 
@@ -43,20 +48,30 @@ def _need_for_review(nid: int):
         return c.execute(text(
             "SELECT n.id, n.requester_id, u.username, n.purpose, n.medical_location, n.event, n.province, n.district, "
             "n.household_size, n.currency, n.goal, n.description, n.contact, n.contact_method, n.payee_name, "
-            "n.payee_details, n.status, n.created_at, n.review_note, n.withdrawn_reason "
-            "FROM needs n JOIN users u ON u.id = n.requester_id WHERE n.id = :i"), {"i": nid}).one_or_none()
+            "n.payee_details, n.status, n.created_at, n.review_note, n.withdrawn_reason, "
+            "n.need_kind, n.quantity_needed, n.specification, n.used_ok, n.handover_method, "
+            "t.category AS item_category, t.name AS item_name "
+            "FROM needs n JOIN users u ON u.id = n.requester_id LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE n.id = :i"), {"i": nid}).one_or_none()
 
 
-def _detail_page(request, user, n, status_code=200, draft=None, error=None, payee_ok=False, document_ok=False):
-    label = need_label(n.purpose, n.medical_location)
+def _detail_page(request, user, n, status_code=200, draft=None, error=None, payee_ok=False, document_ok=False,
+                 contact_ok=False, report_ok=False):
+    is_item = n.need_kind == "item"
+    label = "Item: " + n.item_name if is_item else need_label(n.purpose, n.medical_location)
     with engine.connect() as c:
         earlier = c.execute(text("SELECT status, count(*) AS k FROM needs WHERE requester_id = :u AND id <> :i GROUP BY status ORDER BY status"),
                             {"u": n.requester_id, "i": n.id}).all()
     history = ", ".join(f"{e.k} {STATUS_TEXT[e.status].lower()}" for e in earlier) or "none"
     return render(request, "verify_detail.html", status_code=status_code, user=user, n=n, label=label,
-                  goal=money(n.goal, n.currency), iban=" ".join(n.payee_details[i:i + 4] for i in range(0, len(n.payee_details), 4)),
+                  goal=None if is_item else money(n.goal, n.currency),
+                  iban=None if is_item else " ".join(n.payee_details[i:i + 4] for i in range(0, len(n.payee_details), 4)),
+                  handover_label=dict(items.HANDOVER_METHODS).get(n.handover_method, n.handover_method or ""),
+                  needs_report=is_item and n.item_category in REPORT_CATEGORIES,
+                  contact_ok=contact_ok, report_ok=report_ok,
                   status_text=STATUS_TEXT[n.status], history=history,
-                  draft=draft if draft is not None else f"{label} need in {n.district}, {n.province}.",
+                  draft=draft if draft is not None else (f"{n.item_name}, {_units(n.quantity_needed)} needed in {n.district}, {n.province}."
+                                          if is_item else f"{label} need in {n.district}, {n.province}."),
                   error=error, payee_ok=payee_ok, document_ok=document_ok)
 
 
@@ -64,8 +79,10 @@ def _detail_page(request, user, n, status_code=200, draft=None, error=None, paye
 def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(require_role("verifier"))):
     with engine.connect() as c:
         pending = c.execute(text(
-            "SELECT id, created_at, purpose, medical_location, province, district, currency, goal, "
-            "left(description, 140) AS snippet FROM needs WHERE status = 'pending' ORDER BY id LIMIT 50")).all()
+            "SELECT n.id, n.created_at, n.purpose, n.medical_location, n.province, n.district, n.currency, n.goal, "
+            "n.need_kind, n.quantity_needed, t.name AS item_name, "
+            "left(n.description, 140) AS snippet FROM needs n LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE n.status = 'pending' ORDER BY n.id LIMIT 50")).all()
         again = c.execute(text(
             "SELECT n.id, n.purpose, n.medical_location, n.province, n.district, n.currency, n.withdrawn_reason, p.confirmed "
             "FROM needs n JOIN (SELECT need_id, sum(amount_need) AS confirmed FROM pledges WHERE status = 'confirmed' "
@@ -73,8 +90,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
         disputed = c.execute(text(PLEDGE_LIST.format("p.status = 'disputed'"))).all()
         unanswered = c.execute(text(PLEDGE_LIST.format("p.status = 'sent' AND p.sent_at < now() - make_interval(days => :d)")),
                                {"d": UNANSWERED_DAYS}).all()
-    rows = [{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"), "label": need_label(r.purpose, r.medical_location),
-             "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency), "snippet": r.snippet} for r in pending]
+    rows = [{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
+             "label": ("Item: " + r.item_name if r.need_kind == "item" else need_label(r.purpose, r.medical_location)),
+             "place": f"{r.district}, {r.province}", "goal": (_units(r.quantity_needed) if r.need_kind == "item" else money(r.goal, r.currency)),
+             "snippet": r.snippet} for r in pending]
     flags = [{"id": r.id, "label": need_label(r.purpose, r.medical_location), "place": f"{r.district}, {r.province}",
               "confirmed": money(r.confirmed, r.currency), "reason": r.withdrawn_reason} for r in again]
     return render(request, "verify_queue.html", user=user, rows=rows, flags=flags, done=done, need=need,
@@ -91,11 +110,14 @@ def verify_detail(request: Request, nid: int, user=Depends(require_role("verifie
 
 @router.post("/verify/{nid}/approve")
 def verify_approve(request: Request, nid: int, public_text: str = Form(""), check_payee: str = Form(""),
-                   check_document: str = Form(""), csrf: str = Form(...), user=Depends(require_role("verifier"))):
+                   check_document: str = Form(""), check_contact: str = Form(""), check_report: str = Form(""),
+                   csrf: str = Form(...), user=Depends(require_role("verifier"))):
     check_csrf(request, csrf)
     n = _need_for_review(nid)
     if n is None:
         raise HTTPException(status_code=404, detail="not found")
+    if n.need_kind == "item":
+        return _approve_item(request, user, n, public_text, bool(check_contact), bool(check_report))
     ticked = dict(payee_ok=bool(check_payee), document_ok=bool(check_document))
     if not (check_payee and check_document):
         return _detail_page(request, user, n, 400, draft=public_text,
@@ -114,6 +136,38 @@ def verify_approve(request: Request, nid: int, public_text: str = Form(""), chec
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'approved', :c)"),
                      {"n": nid, "a": user.id, "c": CHECKS_NOTE})
     return RedirectResponse(f"/verify?done=approved&need={nid}", status_code=303)
+
+
+REPORT_CATEGORIES = ("mobility", "medical_equipment")
+ITEM_CHECKS_NOTE = ("Checked outside the platform: I spoke to the requester using the private contact details; "
+                    "the household and the need match the request.")
+REPORT_NOTE = "Checked outside the platform: a medical report or prescription supports this device or supply."
+
+
+def _approve_item(request, user, n, public_text, contact_ok, report_ok):
+    needs_report = n.item_category in REPORT_CATEGORIES
+    ticked = dict(contact_ok=contact_ok, report_ok=report_ok)
+    if not contact_ok or (needs_report and not report_ok):
+        return _detail_page(request, user, n, 400, draft=public_text,
+                            error="Tick every check before approving. The requester is a person you have not met, so the checks must be done.",
+                            **ticked)
+    problem = public_text_problem(public_text, n.contact, n.payee_name or n.username, n.username)
+    if problem:
+        return _detail_page(request, user, n, 400, draft=public_text, error=problem, **ticked)
+    with engine.begin() as conn:
+        done = conn.execute(
+            text("UPDATE needs SET status = 'published', public_text = :t, reviewed_by = :v, reviewed_at = now(), "
+                 "review_note = NULL WHERE id = :i AND status = 'pending' AND requester_id <> :v "
+                 "AND need_kind = 'item' RETURNING id"),
+            {"t": public_text.strip(), "v": user.id, "i": n.id}).one_or_none()
+        if done is None:
+            return _detail_page(request, user, n, 409, error="This need is no longer pending, or you cannot decide it. Nothing was changed.")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'approved', :c)"),
+                     {"n": n.id, "a": user.id, "c": ITEM_CHECKS_NOTE})
+        if needs_report:
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'report_checked', :c)"),
+                         {"n": n.id, "a": user.id, "c": REPORT_NOTE})
+    return RedirectResponse(f"/verify?done=approved&need={n.id}", status_code=303)
 
 
 @router.post("/verify/{nid}/reject")

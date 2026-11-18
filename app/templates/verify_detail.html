@@ -8,18 +8,38 @@
     <tr><th>Place</th><td>{{ n.district }}, {{ n.province }}</td></tr>
     <tr><th>Posted</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
     <tr><th>Status</th><td>{{ status_text }}</td></tr>
+    {% if n.need_kind == "item" %}
+    <tr><th>Item</th><td>{{ n.item_name }}, quantity {{ n.quantity_needed }}</td></tr>
+    <tr><th>Size or model (private)</th><td>{{ n.specification or "none given" }}</td></tr>
+    <tr><th>Condition</th><td>{{ "a used item is fine" if n.used_ok else "new only" }}</td></tr>
+    <tr><th>Preferred handover</th><td>{{ handover_label }}</td></tr>
+    {% else %}
     <tr><th>Goal</th><td>{{ goal }}</td></tr>
+    {% endif %}
     <tr><th>Household size (private)</th><td>{{ n.household_size }}</td></tr>
     <tr><th>Description (private)</th><td>{{ n.description }}</td></tr>
     <tr><th>Contact (private)</th><td>{{ n.contact_method }}: {{ n.contact }}</td></tr>
+    {% if n.need_kind != "item" %}
     <tr><th>Account holder (private)</th><td>{{ n.payee_name }}</td></tr>
     <tr><th>IBAN (private)</th><td>{{ iban }}</td></tr>
+    {% endif %}
     <tr><th>Requester's earlier needs</th><td>{{ history }}</td></tr>
     {% if n.withdrawn_reason %}<tr><th>Withdrawn because</th><td>{{ n.withdrawn_reason }}</td></tr>{% endif %}
     {% if n.review_note %}<tr><th>Review note</th><td>{{ n.review_note }}</td></tr>{% endif %}
   </table>
   {% if n.status == "pending" %}
   <h3>Approve</h3>
+  {% if n.need_kind == "item" %}
+  <p class="note">No money moves for an item need, but a stranger will be sent to this household, so check before you approve. Contact the requester using the details above, outside the platform. This system does not store documents.</p>
+  <form method="post" action="/verify/{{ n.id }}/approve">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label><input type="checkbox" name="check_contact" value="on"{% if contact_ok %} checked{% endif %}> I contacted the requester using the details above, and the household and the need match the request.</label>
+    {% if needs_report %}<br><label><input type="checkbox" name="check_report" value="on"{% if report_ok %} checked{% endif %}> I saw a medical report or prescription that supports this device or supply.</label>{% endif %}</p>
+    <p class="note">Write what the public board will show. Do not include names, phone numbers, addresses, links or the details above. Text that looks like them is refused.</p>
+    <p><textarea name="public_text" rows="4" cols="60" maxlength="300" required>{{ draft }}</textarea></p>
+    <p><button type="submit">Approve and publish</button></p>
+  </form>
+  {% else %}
   <p class="note">Donors will send money straight to the account above, so do both checks yourself, outside the platform, before you approve. To check the document, contact the requester using the details above and ask to see it (a bill, an invoice or a quote). This system does not store documents.</p>
   <form method="post" action="/verify/{{ n.id }}/approve">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -29,6 +49,7 @@
     <p><textarea name="public_text" rows="4" cols="60" maxlength="300" required>{{ draft }}</textarea></p>
     <p><button type="submit">Approve and publish</button></p>
   </form>
+  {% endif %}
   <h3>Reject</h3>
   <form method="post" action="/verify/{{ n.id }}/reject">
     <input type="hidden" name="csrf" value="{{ csrf }}">
