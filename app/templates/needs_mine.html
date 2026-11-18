@@ -52,6 +52,17 @@
       </table>
     </td></tr>
     {% endif %}
+    {% if r.offers %}
+    <tr><td></td><td colspan="5">
+      <strong>Donors who offered items</strong>. A verifier passed their contact to you. Contact them to agree the handover. A public place in daylight is safest, and this site does not see the handover.
+      <table>
+        <tr><th>Units</th><th>Status</th><th>Contact the donor</th></tr>
+        {% for o in r.offers %}
+        <tr data-offer="{{ o.id }}"><td>{{ o.units }}</td><td>{{ o.status }}{% if o.expires %}<br>by {{ o.expires }}{% endif %}</td><td>{% if o.contact %}{{ o.contact }}{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+    </td></tr>
+    {% endif %}
     {% endfor %}
   </table>
   {% endif %}

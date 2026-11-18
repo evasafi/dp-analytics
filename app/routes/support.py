@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from app import items
 from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
@@ -87,8 +88,10 @@ def _support_page(request, user, status_code=200, done="", error=None):
                       "payee": r.payee_name if account else None,
                       "iban": " ".join(r.payee_details[i:i + 4] for i in range(0, len(r.payee_details), 4)) if account else None})
     unconfirmed = sum(1 for r in rows if r.status in SHOW_ACCOUNT)
+    claims, claims_open = _my_claims(user.id)
     return render(request, "support.html", status_code=status_code, user=user, rows=shown, done=done, error=error,
-                  unconfirmed=unconfirmed, max_unconfirmed=s.max_unconfirmed_pledges)
+                  unconfirmed=unconfirmed, max_unconfirmed=s.max_unconfirmed_pledges,
+                  claims=claims, claims_open=claims_open, max_claims=s.max_unconfirmed_pledges)
 
 
 @router.get("/support")
@@ -182,3 +185,138 @@ def pledge_sent(request: Request, pid: int, csrf: str = Form(...), user=Depends(
 def pledge_cancel(request: Request, pid: int, csrf: str = Form(...), user=Depends(require_role("supporter"))):
     check_csrf(request, csrf)
     return _change(request, user, pid, "cancelled", "pledge_cancelled", "cancelled")
+
+
+CLAIM_TEXT = {"sent": "Handed over. Waiting for the requester to confirm", "confirmed": "Confirmed by the requester",
+              "disputed": "Disputed. A verifier is looking at it", "expired": "Expired. It was not handed over in time",
+              "cancelled": "Cancelled"}
+CLAIM_OPEN = ("pledged", "sent", "disputed")
+
+
+def _claim_settings():
+    with engine.connect() as c:
+        return c.execute(text("SELECT claim_expiry_days, max_unconfirmed_pledges FROM settings")).one()
+
+
+def _open_item(nid: int):
+    with engine.connect() as c:
+        return c.execute(text(f"SELECT {COLUMNS} FROM public_needs WHERE id = :i AND need_kind = 'item'"), {"i": nid}).one_or_none()
+
+
+def _claim_form_page(request, user, n, s, status_code=200, error=None, form=None, errors=None):
+    return render(request, "item_claim_form.html", status_code=status_code, user=user, c=_card(n),
+                  remaining=max(0, int(n.quantity_needed) - int(n.promised_units)), days=s.claim_expiry_days,
+                  error=error, form=form or {}, errors=errors or [])
+
+
+def _my_claims(uid: int):
+    with engine.connect() as c:
+        rows = c.execute(text(
+            "SELECT k.id, k.status, k.units, k.created_at, k.expires_at, k.released_at, n.id AS nid, n.province, n.district, "
+            "n.handover_method, n.status AS nstatus, n.withdrawn_reason, t.name AS item_name, "
+            "(SELECT e.note FROM need_events e WHERE e.need_id = n.id AND e.event = 'claim_declined' "
+            "AND left(e.note, length('claim ' || k.id || ':')) = 'claim ' || k.id || ':' ORDER BY e.id DESC LIMIT 1) AS declined "
+            "FROM item_claims k JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE k.donor_id = :u ORDER BY k.id DESC"), {"u": uid}).all()
+    out = []
+    for r in rows:
+        declined = None
+        if r.status == "cancelled" and r.declined:
+            declined = r.declined.split(": ", 1)[1] if ": " in r.declined else r.declined
+        if declined is not None:
+            status = "Declined by a verifier"
+        elif r.status == "pledged":
+            status = ("Offered. A verifier will pass your contact to the requester" if r.released_at is None else
+                      "Your contact was passed to the requester, who will get in touch. Agree the handover with them")
+        else:
+            status = CLAIM_TEXT[r.status]
+        handover = None
+        if r.released_at is not None and r.status in CLAIM_OPEN:
+            handover = dict(items.HANDOVER_METHODS).get(r.handover_method, "").replace(" (recommended)", "")
+        out.append({"id": r.id, "nid": r.nid, "created": r.created_at.strftime("%Y-%m-%d"), "label": r.item_name,
+                    "place": f"{r.district}, {r.province}", "units": r.units, "status": status, "pledged": r.status == "pledged",
+                    "expires": r.expires_at.strftime("%Y-%m-%d %H:%M") if r.status == "pledged" and r.expires_at else None,
+                    "declined": declined, "handover": handover,
+                    "need_status": STATUS_TEXT[r.nstatus] if r.nstatus != "published" else None,
+                    "withdrawn_reason": r.withdrawn_reason if r.nstatus == "withdrawn" else None})
+    return out, sum(1 for r in rows if r.status in CLAIM_OPEN)
+
+
+@router.get("/support/item/{nid}")
+def claim_page(request: Request, nid: int, user=Depends(require_role("supporter"))):
+    _expire()
+    n = _open_item(nid)
+    if n is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return _claim_form_page(request, user, n, _claim_settings())
+
+
+@router.post("/support/item/{nid}")
+def claim_item(request: Request, nid: int, units: str = Form(""), ack: str = Form(""), contact_method: str = Form("other"),
+               contact: str = Form(""), csrf: str = Form(...), user=Depends(require_role("supporter"))):
+    check_csrf(request, csrf)
+    _expire()
+    n = _open_item(nid)
+    if n is None:
+        raise HTTPException(status_code=404, detail="not found")
+    s = _claim_settings()
+    form = {"units": units.strip(), "ack": bool(ack), "contact_method": contact_method, "contact": contact.strip()}
+    remaining = max(0, int(n.quantity_needed) - int(n.promised_units))
+    errors = []
+    if not _WHOLE.fullmatch(form["units"]) or int(form["units"]) < 1:
+        errors.append("The number of units must be a whole number of at least 1.")
+    elif int(form["units"]) > remaining:
+        errors.append(f"That is more than is still open. At most {remaining} unit{'' if remaining == 1 else 's'} can be offered now.")
+    if not ack:
+        errors.append("Tick the box to say you have read the notice and accept that the requester will learn your contact.")
+    problem = contact_problem(form["contact_method"], form["contact"])
+    if problem:
+        errors.append(problem)
+    if errors:
+        return _claim_form_page(request, user, n, s, 400, None, form, errors=errors)
+    try:
+        with engine.begin() as conn:
+            cid = conn.execute(
+                text("INSERT INTO item_claims (need_id, donor_id, units, ack, contact_method, contact) "
+                     "VALUES (:n, :d, :u, true, :m, :k) RETURNING id"),
+                {"n": nid, "d": user.id, "u": int(form["units"]), "m": form["contact_method"], "k": form["contact"]}).scalar_one()
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claimed', :p)"),
+                         {"n": nid, "a": user.id, "p": f"claim {cid}"})
+    except DBAPIError as e:
+        msg = str(e.orig)
+        if "exceed the quantity" in msg:
+            error, code = "Someone else offered in the meantime and this is now more than is still open. Nothing was saved.", 409
+        elif "too many unconfirmed" in msg:
+            error, code = (f"You already have {s.max_unconfirmed_pledges} offers that are not confirmed yet. "
+                           "Wait until some are confirmed. Nothing was saved."), 429
+        elif "not open for item claims" in msg:
+            error, code = "This need is no longer open for offers. Nothing was saved.", 409
+        elif "your own need" in msg:
+            error, code = "You cannot offer help with your own need. Nothing was saved.", 403
+        else:
+            error, code = "The offer could not be saved. Nothing was saved.", 400
+        fresh = _open_item(nid)
+        if fresh is None:
+            return _support_page(request, user, code, error=error)
+        return _claim_form_page(request, user, fresh, s, code, error, form)
+    return RedirectResponse("/support?done=claimed", status_code=303)
+
+
+@router.post("/support/claims/{cid}/cancel")
+def claim_cancel(request: Request, cid: int, csrf: str = Form(...), user=Depends(require_role("supporter"))):
+    check_csrf(request, csrf)
+    with engine.connect() as c:
+        owner = c.execute(text("SELECT donor_id FROM item_claims WHERE id = :c"), {"c": cid}).scalar()
+    if owner != user.id:
+        raise HTTPException(status_code=404, detail="not found")
+    _expire()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("UPDATE item_claims SET status = 'cancelled' WHERE id = :c AND donor_id = :u AND status = 'pledged' RETURNING need_id"),
+            {"c": cid, "u": user.id}).one_or_none()
+        if row is not None:
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_cancelled', :p)"),
+                         {"n": row.need_id, "a": user.id, "p": f"claim {cid}"})
+    if row is None:
+        return _support_page(request, user, 409, error="This offer has already changed (handed over, cancelled or expired). Nothing was done.")
+    return RedirectResponse("/support?done=claim_cancelled", status_code=303)

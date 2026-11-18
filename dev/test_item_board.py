@@ -166,14 +166,14 @@ try:
     print("-- the need page")
     pa = anon.get("/board/%d" % A)
     check("19. the item need page renders", pa.status_code == 200 and str(escape(rep_name)) in pa.text and "Needs 5 units" in pa.text)
-    check("20. it explains how item giving works and says offers are not open yet",
-          "How giving works" in pa.text and "Offering items is not open yet" in pa.text)
+    check("20. it explains how item giving works and tells a visitor to sign in to offer help",
+          "How giving works" in pa.text and "to offer help" in pa.text)
     check("21. it shows the condition and the preferred handover",
           "A used item is fine" in pa.text and "Meet in a public place, in daylight" in pa.text)
     check("22. it has no money pledge steps, euro estimate or pledge link",
           all(x not in pa.text for x in ("Pledge an amount", "/support/pledge/", "lira", "account details")))
     ps = sup.get("/board/%d" % A)
-    check("23. a signed-in supporter sees no pledge link either", ps.status_code == 200 and "/support/pledge/" not in ps.text)
+    check("23. a signed-in supporter sees the offer link and no money pledge link", ps.status_code == 200 and "/support/pledge/" not in ps.text and "/support/item/%d" % A in ps.text)
     check("24. the need page leaks no private detail",
           all(x not in pa.text for x in ("TOPSECRETSPEC", "ITBDESC", "itb_contact@example.com", "itb_donor@example.com")))
     check("25. an unpublished item need gives 404", anon.get("/board/%d" % pending).status_code == 404)

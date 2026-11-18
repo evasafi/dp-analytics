@@ -489,6 +489,13 @@ CREATE TRIGGER item_claims_insert_check BEFORE INSERT ON item_claims
 
 CREATE FUNCTION check_item_claim_transition() RETURNS trigger AS $$
 BEGIN
+    -- Releasing the contact restarts the clock, so a slow verifier does not use up the donor's days.
+    IF OLD.released_at IS NULL AND NEW.released_at IS NOT NULL THEN
+        IF OLD.status <> 'pledged' OR NEW.status <> 'pledged' THEN
+            RAISE EXCEPTION 'only a pledged claim can be released';
+        END IF;
+        NEW.expires_at := now() + make_interval(days => (SELECT claim_expiry_days FROM settings));
+    END IF;
     IF NEW.status = OLD.status THEN
         RETURN NEW;
     END IF;
@@ -676,6 +683,7 @@ GRANT UPDATE (status) ON pledges TO dp_app;
 GRANT INSERT ON need_events TO dp_app;
 GRANT USAGE ON SEQUENCE needs_id_seq, pledges_id_seq, need_events_id_seq TO dp_app;
 GRANT EXECUTE ON FUNCTION expire_pledges() TO dp_app;
+GRANT EXECUTE ON FUNCTION expire_item_claims() TO dp_app;
 GRANT SELECT ON item_types, item_claims, handover_proofs TO dp_app;
 GRANT INSERT (need_id, donor_id, units, ack, contact_method, contact) ON item_claims TO dp_app;
 GRANT UPDATE (status, released_at, released_by) ON item_claims TO dp_app;

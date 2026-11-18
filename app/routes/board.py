@@ -71,6 +71,7 @@ def _expire():
     """Pledges nobody marked as sent in time stop counting. Idempotent, and a no-op when nothing is overdue."""
     with engine.begin() as c:
         c.execute(text("SELECT expire_pledges()"))
+        c.execute(text("SELECT expire_item_claims()"))
 
 
 def _item_card(r):

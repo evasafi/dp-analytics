@@ -5,6 +5,8 @@
   {% if done == "approved" %}<p><strong>Approved and published.</strong>{% if need > 0 %} <a href="/board/{{ need }}">View it on the board</a>.{% endif %}</p>{% endif %}
   {% if done == "rejected" %}<p><strong>Rejected. The requester will see your reason.</strong></p>{% endif %}
   {% if done == "resolved" %}<p><strong>Dispute settled.</strong></p>{% endif %}
+  {% if done == "released" %}<p><strong>Released. The requester can now see the donor's contact.</strong></p>{% endif %}
+  {% if done == "declined" %}<p><strong>Declined. The donor will see your reason.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>
   {% if not rows %}<p>Nothing is waiting.</p>{% else %}
   <table>
@@ -12,6 +14,16 @@
     {% for r in rows %}
     <tr><td style="white-space: nowrap">{{ r.created }}</td><td>{{ r.label }}</td><td>{{ r.place }}</td><td>{{ r.goal }}</td>
         <td>{{ r.snippet }}</td><td><a href="/verify/{{ r.id }}">review</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Item offers waiting for release</h3>
+  <p class="note">A donor offered to hand over items. Check the offer, then pass the donor's contact to the requester, or decline it. An offer nobody releases expires on its own.</p>
+  {% if not offers %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>Offered</th><th>Item</th><th>Place</th><th></th></tr>
+    {% for o in offers %}
+    <tr data-offer="{{ o.id }}"><td style="white-space: nowrap">{{ o.created }}</td><td>{{ o.label }}</td><td>{{ o.place }}</td><td><a href="/verify/claims/{{ o.id }}">open</a></td></tr>
     {% endfor %}
   </table>
   {% endif %}

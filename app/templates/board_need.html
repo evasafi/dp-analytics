@@ -18,7 +18,9 @@
     <li>The requester confirms they received it, and only then does it count as confirmed.</li>
   </ol>
   <p class="note">This site does not see the handover and cannot guarantee anyone's safety. The requester can withdraw a need.</p>
-  <p class="note">Offering items is not open yet.</p>
+  {% if not viewer %}<p>You need to <a href="/login">sign in</a> with a supporter account to offer help, or <a href="/register">create one</a>.</p>
+  {% elif viewer.role == "supporter" %}<p><a href="/support/item/{{ c.id }}">Offer help with this need</a></p>
+  {% else %}<p class="note">Offers are made from supporter accounts. You are signed in as a {{ viewer.role }}.</p>{% endif %}
   {% else %}
   <h3>How giving works</h3>
   <ol>

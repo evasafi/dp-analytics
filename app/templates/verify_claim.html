@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Review item offer{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (verifier). <a href="/verify">Back to the queue</a></p>
+  <h3>Offer {{ k.id }}: {{ k.item_name }}, {{ k.units }} of {{ k.quantity_needed }} units</h3>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <table>
+    <tr><th>Need</th><td><a href="/verify/{{ k.need_id }}">Need {{ k.need_id }}</a>, {{ k.district }}, {{ k.province }}</td></tr>
+    <tr><th>Offered</th><td>{{ k.created_at.strftime("%Y-%m-%d %H:%M") }}{% if k.expires_at %} (expires {{ k.expires_at.strftime("%Y-%m-%d %H:%M") }}){% endif %}</td></tr>
+    <tr><th>Status</th><td>{{ status_text }}</td></tr>
+    <tr><th>Donor</th><td>{{ k.donor }}</td></tr>
+    <tr><th>Donor's contact (private)</th><td>{{ k.d_method }}: {{ k.d_contact }}</td></tr>
+    <tr><th>Donor's other offers</th><td>{{ history }}</td></tr>
+    <tr><th>Requester</th><td>{{ k.requester }}</td></tr>
+    <tr><th>Requester's contact (private)</th><td>{{ k.r_method }}: {{ k.r_contact }}</td></tr>
+    <tr><th>Requester's preferred handover</th><td>{{ handover_label }}</td></tr>
+  </table>
+  {% if k.status == "pledged" and not k.released_at %}
+  <h3>Release</h3>
+  <p class="note">Check the offer first, using the contact details above, outside the platform. Releasing passes the donor's contact to the requester, who will then contact the donor. The donor's days to hand over restart when you release.</p>
+  <form method="post" action="/verify/claims/{{ k.id }}/release">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><button type="submit">Release the donor's contact to the requester</button></p>
+  </form>
+  <h3>Decline</h3>
+  <form method="post" action="/verify/claims/{{ k.id }}/decline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><textarea name="reason" rows="3" cols="60" minlength="10" maxlength="450" placeholder="Why? The donor will see this (10 to 450 characters)." required>{{ reason }}</textarea></p>
+    <p><button type="submit">Decline the offer</button></p>
+  </form>
+  {% elif k.status == "pledged" %}
+  <p>The contact was released on {{ k.released_at.strftime("%Y-%m-%d %H:%M") }}. The donor and the requester arrange the handover themselves.</p>
+  {% else %}
+  <p>This offer is {{ status_text|lower }}, so there is nothing to do here.</p>
+  {% endif %}
+{% endblock %}

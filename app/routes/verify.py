@@ -8,6 +8,7 @@ from app import items
 from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
+from app.routes.board import _expire
 from app.validation import public_text_problem
 from app.web import check_csrf, render
 
@@ -77,6 +78,7 @@ def _detail_page(request, user, n, status_code=200, draft=None, error=None, paye
 
 @router.get("/verify")
 def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(require_role("verifier"))):
+    _expire()
     with engine.connect() as c:
         pending = c.execute(text(
             "SELECT n.id, n.created_at, n.purpose, n.medical_location, n.province, n.district, n.currency, n.goal, "
@@ -88,6 +90,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
             "FROM needs n JOIN (SELECT need_id, sum(amount_need) AS confirmed FROM pledges WHERE status = 'confirmed' "
             "GROUP BY need_id) p ON p.need_id = n.id WHERE n.status = 'withdrawn' ORDER BY n.withdrawn_at DESC LIMIT 50")).all()
         disputed = c.execute(text(PLEDGE_LIST.format("p.status = 'disputed'"))).all()
+        offers = c.execute(text(
+            "SELECT k.id, k.units, k.created_at, t.name AS item_name, n.province, n.district FROM item_claims k "
+            "JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE k.status = 'pledged' AND k.released_at IS NULL ORDER BY k.id LIMIT 50")).all()
         unanswered = c.execute(text(PLEDGE_LIST.format("p.status = 'sent' AND p.sent_at < now() - make_interval(days => :d)")),
                                {"d": UNANSWERED_DAYS}).all()
     rows = [{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -97,7 +103,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
     flags = [{"id": r.id, "label": need_label(r.purpose, r.medical_location), "place": f"{r.district}, {r.province}",
               "confirmed": money(r.confirmed, r.currency), "reason": r.withdrawn_reason} for r in again]
     return render(request, "verify_queue.html", user=user, rows=rows, flags=flags, done=done, need=need,
-                  disputed=_pledge_rows(disputed), unanswered=_pledge_rows(unanswered), days=UNANSWERED_DAYS)
+                  disputed=_pledge_rows(disputed), unanswered=_pledge_rows(unanswered), days=UNANSWERED_DAYS,
+                  offers=[{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
+                           "label": f"{r.item_name}, {_units(r.units)}", "place": f"{r.district}, {r.province}"}
+                          for r in offers])
 
 
 @router.get("/verify/{nid}")
@@ -241,3 +250,79 @@ def verify_resolve(request: Request, pid: int, outcome: str = Form(""), note: st
     if row is None:
         return _pledge_page(request, user, pid, 409, error="This pledge is not disputed (any more). Nothing was changed.")
     return RedirectResponse("/verify?done=resolved", status_code=303)
+
+
+CLAIM_STATUS = {"pledged": "Waiting for the contact to be released", "sent": "Handed over, waiting for the requester",
+                "confirmed": "Confirmed by the requester", "disputed": "Disputed", "expired": "Expired", "cancelled": "Cancelled"}
+
+
+def _claim_for_review(cid: int):
+    with engine.connect() as c:
+        return c.execute(text(
+            "SELECT k.id, k.need_id, k.units, k.status, k.contact_method AS d_method, k.contact AS d_contact, k.created_at, "
+            "k.expires_at, k.released_at, k.donor_id, ud.username AS donor, ur.username AS requester, "
+            "n.contact_method AS r_method, n.contact AS r_contact, n.province, n.district, n.quantity_needed, "
+            "n.handover_method, t.name AS item_name "
+            "FROM item_claims k JOIN users ud ON ud.id = k.donor_id JOIN needs n ON n.id = k.need_id "
+            "JOIN users ur ON ur.id = n.requester_id LEFT JOIN item_types t ON t.id = n.item_type_id WHERE k.id = :c"),
+            {"c": cid}).one_or_none()
+
+
+def _claim_page(request, user, k, status_code=200, error=None, reason=""):
+    with engine.connect() as c:
+        earlier = c.execute(text("SELECT status, count(*) AS cnt FROM item_claims WHERE donor_id = :d AND id <> :i "
+                                 "GROUP BY status ORDER BY status"), {"d": k.donor_id, "i": k.id}).all()
+    history = ", ".join(f"{e.cnt} {e.status}" for e in earlier) or "none"
+    status_text = CLAIM_STATUS[k.status] if not (k.status == "pledged" and k.released_at is not None) else "Contact released"
+    return render(request, "verify_claim.html", status_code=status_code, user=user, k=k, history=history,
+                  status_text=status_text, error=error, reason=reason,
+                  handover_label=dict(items.HANDOVER_METHODS).get(k.handover_method, "").replace(" (recommended)", ""))
+
+
+@router.get("/verify/claims/{cid}")
+def verify_claim(request: Request, cid: int, user=Depends(require_role("verifier"))):
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return _claim_page(request, user, k)
+
+
+@router.post("/verify/claims/{cid}/release")
+def verify_claim_release(request: Request, cid: int, csrf: str = Form(...), user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    with engine.begin() as conn:
+        done = conn.execute(
+            text("UPDATE item_claims SET released_at = now(), released_by = :v WHERE id = :c AND status = 'pledged' "
+                 "AND released_at IS NULL RETURNING need_id"), {"v": user.id, "c": cid}).one_or_none()
+        if done is None:
+            return _claim_page(request, user, k, 409, error="This offer was already released, declined or cancelled, or it has expired. Nothing was changed.")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_released', :p)"),
+                     {"n": done.need_id, "a": user.id, "p": f"claim {cid}"})
+    return RedirectResponse("/verify?done=released", status_code=303)
+
+
+@router.post("/verify/claims/{cid}/decline")
+def verify_claim_decline(request: Request, cid: int, reason: str = Form(""), csrf: str = Form(...),
+                         user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    reason = reason.strip()
+    if not 10 <= len(reason) <= 450:
+        return _claim_page(request, user, k, 400, error="Write a reason of 10 to 450 characters. The donor will see it.", reason=reason)
+    with engine.begin() as conn:
+        done = conn.execute(
+            text("UPDATE item_claims SET status = 'cancelled' WHERE id = :c AND status = 'pledged' AND released_at IS NULL "
+                 "RETURNING need_id"), {"c": cid}).one_or_none()
+        if done is None:
+            return _claim_page(request, user, k, 409, error="This offer was already released, declined or cancelled, or it has expired. Nothing was changed.")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_declined', :p)"),
+                     {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {reason}"})
+    return RedirectResponse("/verify?done=declined", status_code=303)

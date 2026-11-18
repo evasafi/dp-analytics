@@ -6,6 +6,7 @@ from sqlalchemy.exc import DBAPIError
 
 from app import items
 from app.auth import require_role
+from app.routes.board import _expire
 from app.db import engine
 from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCES
@@ -145,8 +146,14 @@ OUTCOME_TEXT = {"dispute_arrived": "You said it did not arrive. A verifier check
                 "dispute_not_arrived": "You said it did not arrive. A verifier checked and agreed. The pledge was cancelled"}
 
 
+OFFER_TEXT = {"pledged": "Offered. Contact the donor to agree the handover", "sent": "The donor says it was handed over",
+              "confirmed": "Confirmed", "disputed": "Disputed. A verifier is looking at it"}
+CONTACT_LABELS = {"phone": "Phone", "email": "Email", "whatsapp": "WhatsApp", "other": "Other"}
+
+
 def _mine_page(request, user, status_code=200, done=False, withdrawn=False, received=False, disputed=False, error=None,
                open_id=None, reason="", open_pid=None, dispute_reason=""):
+    _expire()
     with engine.connect() as c:
         sent = c.execute(text(
             "SELECT p.id, p.need_id, p.status, p.amount_try, p.amount_need, p.sent_at, n.currency FROM pledges p "
@@ -167,8 +174,18 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
             "count(DISTINCT supporter_id) AS donors FROM pledges "
             "WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed') GROUP BY need_id) p ON p.need_id = n.id "
             "LEFT JOIN item_types t ON t.id = n.item_type_id WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
+        offers = c.execute(text(
+            "SELECT k.id, k.need_id, k.units, k.status, k.contact_method, k.contact, k.expires_at FROM item_claims k "
+            "JOIN needs n ON n.id = k.need_id WHERE n.requester_id = :u AND k.released_at IS NOT NULL "
+            "AND k.status IN ('pledged', 'sent', 'confirmed', 'disputed') ORDER BY k.id"), {"u": user.id}).all()
     by_need = {}
     outcome = {s.id: s.event for s in settled}
+    offers_by_need = {}
+    for k in offers:
+        offers_by_need.setdefault(k.need_id, []).append({
+            "id": k.id, "units": k.units, "status": OFFER_TEXT[k.status],
+            "contact": None if k.status == "confirmed" else f"{CONTACT_LABELS[k.contact_method]}: {k.contact}",
+            "expires": k.expires_at.strftime("%Y-%m-%d") if k.status == "pledged" and k.expires_at else None})
     for p in sent:
         if p.status == "cancelled" and p.id not in outcome:
             continue
@@ -189,7 +206,8 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
                  else money(r.goal, r.currency)),
                       "status": STATUS_TEXT[r.status], "funding": funding, "description": r.description,
                       "review_note": r.review_note, "withdrawn_reason": r.withdrawn_reason,
-                      "can_withdraw": r.status in ("pending", "published"), "pledges": by_need.get(r.id, [])})
+                      "can_withdraw": r.status in ("pending", "published"), "pledges": by_need.get(r.id, []),
+                      "offers": offers_by_need.get(r.id, [])})
     return render(request, "needs_mine.html", status_code=status_code, user=user, rows=shown, done=done,
                   withdrawn=withdrawn, received=received, disputed=disputed, error=error, open_id=open_id, reason=reason,
                   open_pid=open_pid, dispute_reason=dispute_reason)
