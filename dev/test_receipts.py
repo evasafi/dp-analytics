@@ -227,7 +227,7 @@ try:
     check("settling it again is refused (409)", resolve(vf, tv, pC, outcome="arrived").status_code == 409 and pstat(pC) == "cancelled")
     hist = vf.get(f"/verify/pledges/{pC}").text
     check("the pledge page shows its history: disputed by the requester, settled by the verifier",
-          "receipt_disputed" in hist and "dispute_not_arrived" in hist and "rc_req" in hist and "rc_v" in hist)
+          "Requester says the money did not arrive" in hist and "Verifier settled: the money did not arrive" in hist and "rc_req" in hist and "rc_v" in hist)
 
     # ---- confirmed money completes a need
     n2 = make(500)

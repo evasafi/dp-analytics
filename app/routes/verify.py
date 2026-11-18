@@ -14,6 +14,16 @@ router = APIRouter()
 CHECKS_NOTE = ("Checked outside the platform: the account holder's name matches the requester's identity; "
                "the supporting document was seen and matches the goal.")
 UNANSWERED_DAYS = 14  # a pledge marked sent that the requester has not answered for this long is listed for follow-up
+# Readable names for the pledge events the verifier's history shows. Keys are the stored event names.
+EVENT_NAMES = {
+    "pledged": "Pledged",
+    "pledge_sent": "Supporter marked it as sent",
+    "pledge_cancelled": "Pledge cancelled",
+    "receipt_confirmed": "Requester confirmed receipt",
+    "receipt_disputed": "Requester says the money did not arrive",
+    "dispute_arrived": "Verifier settled: the money arrived",
+    "dispute_not_arrived": "Verifier settled: the money did not arrive",
+}
 OUTCOMES = {"arrived": ("confirmed", "dispute_arrived"), "not_arrived": ("cancelled", "dispute_not_arrived")}
 PLEDGE_LIST = ("SELECT p.id, p.amount_try, p.amount_need, p.sent_at, n.purpose, n.medical_location, n.province, n.district, "
                "n.currency FROM pledges p JOIN needs n ON n.id = p.need_id WHERE {} ORDER BY p.sent_at LIMIT 50")
@@ -145,7 +155,7 @@ def _pledge_page(request, user, pid: int, status_code=200, error=None, note=""):
             "AND e.event IN ('pledged', 'pledge_sent', 'pledge_cancelled', 'receipt_confirmed', 'receipt_disputed', "
             "'dispute_arrived', 'dispute_not_arrived') ORDER BY e.id"),
             {"n": p.nid, "tag": f"pledge {pid}", "prefix": f"pledge {pid}:%"}).all()
-    events = [{"ts": e.ts.strftime("%Y-%m-%d %H:%M"), "event": e.event, "who": e.username,
+    events = [{"ts": e.ts.strftime("%Y-%m-%d %H:%M"), "event": EVENT_NAMES.get(e.event, e.event), "who": e.username,
                "note": e.note.split(":", 1)[1].strip() if ":" in e.note else ""} for e in history]
     return render(request, "verify_pledge.html", status_code=status_code, user=user, p=p, events=events, error=error, note=note,
                   label=need_label(p.purpose, p.medical_location), amount=_pledge_amount(p.amount_try, p.amount_need, p.currency),
