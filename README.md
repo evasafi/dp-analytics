@@ -83,7 +83,7 @@ To regenerate the two Python lists, run these from the project root, in this ord
 The scripts in `dev/` are run from the project root as modules, for example `python -m dev.test_board`. Each asks for the database owner's password with hidden input, refuses to run on a database without this schema, and creates and removes its own throwaway accounts. They never touch real accounts or the real budgets. Do not run them against a database that holds real data. To run the main ones in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }

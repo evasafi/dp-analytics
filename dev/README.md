@@ -16,13 +16,18 @@ Every test below that touches the database asks for the database owner's passwor
 | `test_supporters.py` | Pledging, account visibility, marking as sent, cancelling |
 | `test_receipts.py` | Confirming and disputing a pledge, settling disputes |
 | `test_suggestion.py` | The suggested amount and when it hides |
+| `test_friendly_errors.py` | Readable error pages for browsers, plain statuses for everything else |
+| `test_polish.py` | Error lists, IBAN wrapping, plain funding wording, receipt heading, the small-cell warning |
+| `test_notices.py` | The bank-transfer notices on the pledge form, the need page and the post form |
+| `test_header.py` | The board header for visitors, signed-in users and bad sessions |
+| `test_stats.py` | The front-page stats view and its line on the board |
 | `test_withdrawal_reason.py` | The text guard on a withdrawal reason |
 | `test_analytics_engine.py`, `test_analytics_routes.py` | The private counts and the analyst pages |
 
 To run them in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }
