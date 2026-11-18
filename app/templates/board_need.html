@@ -2,7 +2,7 @@
 {% from "_ledger.html" import ledger %}
 {% block title %}{{ c.label }}{% endblock %}
 {% block content %}
-  <p><a href="/board">Back to the board</a> | <a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>
+  <p><a href="/board">Back to the board</a>{% if viewer %} | Signed in as <strong>{{ viewer.username }}</strong> ({{ viewer.role }}) | <a href="/me">My page</a>{% else %} | <a href="/login">Sign in</a> | <a href="/register">Create an account</a>{% endif %}</p>
   <h3>{{ c.label }} in {{ c.place }}{% if c.event %} ({{ c.event }}){% endif %}</h3>
   <p class="note">Posted {{ c.month }}. Goal {{ c.goal }}{% if c.euro %}, about {{ goal_try }} TRY at 1 euro = {{ rate }} lira. This is an estimate: the real amount depends on the exchange rate when money is sent{% endif %}.</p>
   {{ ledger(c) }}
@@ -17,5 +17,7 @@
     <li>The requester confirms they received it, and only then does it count as confirmed.</li>
   </ol>
   <p class="note">The requester can withdraw a need. Any refund of money already sent is between you and the requester; this site cannot refund it.</p>
-  <p><a href="/support/pledge/{{ c.id }}">Pledge to this need</a>. You need to <a href="/login">sign in</a> with a supporter account first, or <a href="/register">create one</a>.</p>
+  {% if not viewer %}<p>You need to <a href="/login">sign in</a> with a supporter account to pledge, or <a href="/register">create one</a>.</p>
+  {% elif viewer.role == "supporter" %}<p><a href="/support/pledge/{{ c.id }}">Pledge to this need</a></p>
+  {% else %}<p class="note">Pledges are made from supporter accounts. You are signed in as a {{ viewer.role }}.</p>{% endif %}
 {% endblock %}

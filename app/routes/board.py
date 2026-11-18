@@ -152,5 +152,5 @@ def board_need(request: Request, nid: int):
     if r is None:
         raise HTTPException(status_code=404, detail="not found")
     return templates.TemplateResponse(request, "board_need.html", {
-        "c": _card(r), "rate": f"{s.eur_try_rate:.0f}", "goal_try": f"{r.goal * s.eur_try_rate:,.0f}",
+        "viewer": _viewer(request), "c": _card(r), "rate": f"{s.eur_try_rate:.0f}", "goal_try": f"{r.goal * s.eur_try_rate:,.0f}",
         "floor": s.pledge_floor, "days": s.pledge_expiry_days})
