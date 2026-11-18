@@ -2,7 +2,7 @@
 {% block title %}Review queue{% endblock %}
 {% block content %}
   <p>Signed in as <strong>{{ user.username }}</strong> (verifier).</p>
-  {% if done == "approved" %}<p><strong>Approved and published.</strong></p>{% endif %}
+  {% if done == "approved" %}<p><strong>Approved and published.</strong>{% if need > 0 %} <a href="/board/{{ need }}">View it on the board</a>.{% endif %}</p>{% endif %}
   {% if done == "rejected" %}<p><strong>Rejected. The requester will see your reason.</strong></p>{% endif %}
   {% if done == "resolved" %}<p><strong>Dispute settled.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>

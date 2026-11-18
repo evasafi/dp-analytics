@@ -61,7 +61,7 @@ def _detail_page(request, user, n, status_code=200, draft=None, error=None, paye
 
 
 @router.get("/verify")
-def verify_queue(request: Request, done: str = "", user=Depends(require_role("verifier"))):
+def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(require_role("verifier"))):
     with engine.connect() as c:
         pending = c.execute(text(
             "SELECT id, created_at, purpose, medical_location, province, district, currency, goal, "
@@ -77,7 +77,7 @@ def verify_queue(request: Request, done: str = "", user=Depends(require_role("ve
              "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency), "snippet": r.snippet} for r in pending]
     flags = [{"id": r.id, "label": need_label(r.purpose, r.medical_location), "place": f"{r.district}, {r.province}",
               "confirmed": money(r.confirmed, r.currency), "reason": r.withdrawn_reason} for r in again]
-    return render(request, "verify_queue.html", user=user, rows=rows, flags=flags, done=done,
+    return render(request, "verify_queue.html", user=user, rows=rows, flags=flags, done=done, need=need,
                   disputed=_pledge_rows(disputed), unanswered=_pledge_rows(unanswered), days=UNANSWERED_DAYS)
 
 
@@ -113,7 +113,7 @@ def verify_approve(request: Request, nid: int, public_text: str = Form(""), chec
             return _detail_page(request, user, n, 409, error="This need is no longer pending, or you cannot decide it. Nothing was changed.")
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'approved', :c)"),
                      {"n": nid, "a": user.id, "c": CHECKS_NOTE})
-    return RedirectResponse("/verify?done=approved", status_code=303)
+    return RedirectResponse(f"/verify?done=approved&need={nid}", status_code=303)
 
 
 @router.post("/verify/{nid}/reject")

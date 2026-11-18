@@ -178,7 +178,7 @@ try:
     r = approve(va, ta, n1, public_text="  " + GOOD_TEXT + "  ")
     row = rows("SELECT status, public_text, payee_verified, reviewed_by, review_note FROM needs WHERE id = :n", n=n1)[0]
     check("a valid approval: 303, published, text stored trimmed, payee verified, reviewer recorded",
-          r.status_code == 303 and r.headers["location"] == "/verify?done=approved"
+          r.status_code == 303 and r.headers["location"] == f"/verify?done=approved&need={n1}"
           and row == ("published", GOOD_TEXT, True, uid["vf_a"], None))
     ev = rows("SELECT actor_id, note FROM need_events WHERE need_id = :n AND event = 'approved'", n=n1)
     check("the approval event records who and that both checks were done",
