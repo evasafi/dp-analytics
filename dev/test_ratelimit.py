@@ -18,6 +18,9 @@ with engine.begin() as c:
 
 cl = TestClient(app, base_url="http://127.0.0.1:8000")
 
+with engine.connect() as c:
+    before = c.execute(text("SELECT count(*) FROM login_failures WHERE username = :u"), {"u": USER}).scalar_one()
+
 
 def attempt(pw):
     token = re.search(r'name="csrf" value="([^"]+)"', cl.get("/login").text).group(1)
@@ -30,6 +33,6 @@ print("2. sixth attempt:", attempt("wrong"), "(expect 429)")
 print("3. correct password during lockout:", attempt(PW), "(expect 429)")
 
 with engine.connect() as c:
-    n = c.execute(text("SELECT count(*) FROM login_failures WHERE username = :u"), {"u": USER}).scalar_one()
-print("4. failures recorded:", n, "(expect 5; locked attempts are not logged)")
+    n = c.execute(text("SELECT count(*) FROM login_failures WHERE username = :u"), {"u": USER}).scalar_one() - before
+print("4. failures recorded this run:", n, "(expect 5; locked attempts are not logged)")
 print("Lockout expiry is not tested here: it needs a 5 minute wait (see next step).")
