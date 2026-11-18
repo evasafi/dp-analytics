@@ -1,6 +1,7 @@
 """The public board: open needs with their funding, one page per need, and the map data.
 
-No sign-in and no cookies. It reads only the public_needs view, so a private column cannot reach these pages.
+Sign-in is optional. A visitor with a valid session sees their name in the header; the board never sets a cookie.
+It reads only the public_needs view, so a private column cannot reach these pages.
 A limit of 60 requests a minute per address is kept in memory.
 """
 import threading
@@ -12,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
 
+from app.auth import current_user
 from app.db import engine
 from app.provinces import PROVINCE_NAMES, PROVINCES
 from app.reference import EVENTS, PURPOSE_LABELS, PURPOSES, money, need_label
@@ -42,6 +44,14 @@ def _board_rate_ok(ip: str) -> bool:
             return False
         d.append(now)
         return True
+
+
+def _viewer(request: Request):
+    """The signed-in user, or None. A missing, expired or invalid session just means a visitor."""
+    try:
+        return current_user(request)
+    except HTTPException:
+        return None
 
 
 def _too_many():
@@ -102,7 +112,7 @@ def board(request: Request, purpose: str = "", province: str = "", sort: str = "
         return "/board" + ("?" + urlencode(q) if q else "")
 
     return templates.TemplateResponse(request, "board.html", {
-        "cards": [_card(r) for r in rows], "total": total, "purpose": purpose, "province": province, "sort": sort,
+        "viewer": _viewer(request), "cards": [_card(r) for r in rows], "total": total, "purpose": purpose, "province": province, "sort": sort,
         "purposes": PURPOSES, "provinces": PROVINCES, "sorts": SORT_TEXT,
         "prev_url": link(page - 1) if page > 1 else None,
         "next_url": link(page + 1) if page * PAGE_SIZE < total else None})

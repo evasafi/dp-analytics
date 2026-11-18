@@ -2,7 +2,8 @@
 {% from "_ledger.html" import ledger %}
 {% block title %}Needs board{% endblock %}
 {% block content %}
-  <p><a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>
+  {% if viewer %}<p>Signed in as <strong>{{ viewer.username }}</strong> ({{ viewer.role }}) | <a href="/me">My page</a></p>
+  {% else %}<p><a href="/login">Sign in</a> | <a href="/register">Create an account</a></p>{% endif %}
   <h3>Needs board</h3>
   <p class="note">Every need here was reviewed by a verifier before it appeared. To pledge, create a supporter account. You send money straight to the requester's account, and nothing passes through this site.</p>
   <form method="get" action="/board">
