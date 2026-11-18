@@ -80,6 +80,8 @@ CREATE TABLE settings (
     pledge_expiry_days      integer       NOT NULL DEFAULT 7  CHECK (pledge_expiry_days BETWEEN 1 AND 60),
     max_unconfirmed_pledges integer       NOT NULL DEFAULT 10 CHECK (max_unconfirmed_pledges >= 1),
     suggestion_min_needs    integer       NOT NULL DEFAULT 20 CHECK (suggestion_min_needs >= 1),
+    claim_expiry_days       integer       NOT NULL DEFAULT 7  CHECK (claim_expiry_days BETWEEN 1 AND 60),
+    photo_retention_days    integer       NOT NULL DEFAULT 30 CHECK (photo_retention_days BETWEEN 1 AND 365),
     eur_try_rate            numeric(10,4) NOT NULL DEFAULT 50 CHECK (eur_try_rate > 0)              -- PLACEHOLDER rate
 );
 INSERT INTO settings DEFAULT VALUES;
@@ -115,25 +117,80 @@ INSERT INTO purpose_limits VALUES
     ('debt',              'TRY',  300000),
     ('other',             'TRY',  300000);
 
+-- ---------------------------------------------------------------- item types
+-- What an item need can ask for. A type with enabled = false cannot be posted yet (used
+-- medical equipment waits for the legal check, see the design note).
+CREATE TABLE item_types (
+    id       serial PRIMARY KEY,
+    category text NOT NULL CHECK (category IN
+        ('mobility', 'medical_equipment', 'heating', 'clothing', 'bedding', 'kitchen',
+         'hygiene_baby', 'food', 'power_comms', 'other')),
+    name     text NOT NULL CHECK (length(name) BETWEEN 2 AND 60),
+    enabled  boolean NOT NULL DEFAULT true,
+    UNIQUE (category, name)
+);
+INSERT INTO item_types (category, name, enabled) VALUES
+    ('mobility', 'Wheelchair, manual', true),
+    ('mobility', 'Wheelchair, electric', false),
+    ('mobility', 'Wheelchair, child', true),
+    ('mobility', 'Walker', true),
+    ('mobility', 'Crutches', true),
+    ('mobility', 'Hearing aid', false),
+    ('mobility', 'Orthosis', true),
+    ('medical_equipment', 'Oxygen concentrator', false),
+    ('medical_equipment', 'Hospital bed', false),
+    ('medical_equipment', 'Diabetic supplies', false),
+    ('heating', 'Electric heater', true),
+    ('heating', 'Wood or coal stove', true),
+    ('heating', 'Gas cylinder', true),
+    ('heating', 'Firewood', true),
+    ('clothing', 'Coat', true),
+    ('clothing', 'Fleece', true),
+    ('clothing', 'Shoes', true),
+    ('clothing', 'Underwear', true),
+    ('clothing', 'Socks', true),
+    ('bedding', 'Sleeping bag', true),
+    ('bedding', 'Pillow', true),
+    ('bedding', 'Bed and duvet set', true),
+    ('kitchen', 'Pan', true),
+    ('kitchen', 'Kettle', true),
+    ('kitchen', 'Plates', true),
+    ('kitchen', 'Cutlery', true),
+    ('hygiene_baby', 'Soap', true),
+    ('hygiene_baby', 'Menstrual materials', true),
+    ('hygiene_baby', 'Diapers', true),
+    ('food', 'Canned food', true),
+    ('food', 'Staples', true),
+    ('power_comms', 'Power bank', true),
+    ('power_comms', 'Generator', true),
+    ('power_comms', 'Phone', true),
+    ('other', 'Other (described to the verifier)', true);
+
 -- ---------------------------------------------------------------- needs
 CREATE TABLE needs (
     id               bigserial PRIMARY KEY,
     requester_id     bigint NOT NULL REFERENCES users(id),
-    purpose          text NOT NULL CHECK (purpose IN
+    need_kind        text NOT NULL DEFAULT 'money' CHECK (need_kind IN ('money', 'item')),
+    item_type_id     integer REFERENCES item_types(id),
+    quantity_needed  integer CHECK (quantity_needed BETWEEN 1 AND 50),
+    specification    text CHECK (specification IS NULL OR length(specification) <= 300),
+    used_ok          boolean,
+    handover_method  text CHECK (handover_method IN ('public_place', 'courier_post', 'pickup_from_donor', 'other')),
+    purpose          text CHECK (purpose IN
         ('rent_housing', 'utilities', 'food', 'medical', 'education',
          'disaster_recovery', 'debt', 'other')),
     medical_location text CHECK (medical_location IN ('turkey', 'abroad')),
     event            text CHECK (event IN ('earthquake', 'flood', 'fire', 'other_disaster')),
-    currency         text NOT NULL CHECK (currency IN ('TRY', 'EUR')),
+    currency         text CHECK (currency IN ('TRY', 'EUR')),
     province         text NOT NULL CHECK (length(province) BETWEEN 2 AND 40),
     district         text NOT NULL CHECK (length(district) BETWEEN 2 AND 40),
     household_size   smallint NOT NULL CHECK (household_size BETWEEN 1 AND 12),         -- private
-    goal             integer NOT NULL CHECK (goal >= 100),                              -- in the need's own currency
+    goal             integer CHECK (goal >= 100),                              -- in the need's own currency
     description      text NOT NULL CHECK (length(description) BETWEEN 10 AND 1000),     -- private
     contact_method   text NOT NULL DEFAULT 'other' CHECK (contact_method IN ('phone', 'email', 'whatsapp', 'other')),
     contact          text NOT NULL CHECK (length(contact) BETWEEN 3 AND 200),           -- private
-    payee_name       text NOT NULL CHECK (length(payee_name) BETWEEN 2 AND 100),        -- private until a pledge is made
-    payee_details    text NOT NULL CHECK (length(payee_details) BETWEEN 5 AND 200),     -- private until a pledge is made
+    payee_name       text CHECK (length(payee_name) BETWEEN 2 AND 100),        -- private until a pledge is made
+    payee_details    text CHECK (length(payee_details) BETWEEN 5 AND 200),     -- private until a pledge is made
     payee_verified   boolean NOT NULL DEFAULT false,
     public_text      text CHECK (public_text IS NULL OR length(public_text) <= 300),
     status           text NOT NULL DEFAULT 'pending' CHECK (status IN
@@ -149,8 +206,21 @@ CREATE TABLE needs (
     CONSTRAINT euro_only_for_medical_abroad CHECK
         ((currency = 'EUR') = (purpose = 'medical' AND medical_location = 'abroad')),
     CONSTRAINT event_only_for_disaster CHECK ((purpose = 'disaster_recovery') = (event IS NOT NULL)),
+    -- A CHECK passes when it evaluates to NULL, so the checks above say nothing about item needs
+    -- (purpose is NULL there). These two say it outright: each kind has exactly its own fields.
+    CONSTRAINT money_needs_are_complete CHECK (need_kind <> 'money' OR
+        (purpose IS NOT NULL AND currency IS NOT NULL AND goal IS NOT NULL
+         AND payee_name IS NOT NULL AND payee_details IS NOT NULL
+         AND item_type_id IS NULL AND quantity_needed IS NULL AND specification IS NULL
+         AND used_ok IS NULL AND handover_method IS NULL)),
+    CONSTRAINT item_needs_are_complete CHECK (need_kind <> 'item' OR
+        (purpose IS NULL AND medical_location IS NULL AND event IS NULL AND currency IS NULL
+         AND goal IS NULL AND payee_name IS NULL AND payee_details IS NULL
+         AND item_type_id IS NOT NULL AND quantity_needed IS NOT NULL
+         AND used_ok IS NOT NULL AND handover_method IS NOT NULL)),
     CONSTRAINT public_needs_are_complete CHECK
-        (status IN ('pending', 'rejected', 'withdrawn') OR (public_text IS NOT NULL AND payee_verified)),
+        (status IN ('pending', 'rejected', 'withdrawn')
+         OR (public_text IS NOT NULL AND (need_kind = 'item' OR payee_verified))),
     CONSTRAINT withdrawal_has_reason CHECK ((status = 'withdrawn') = (withdrawn_reason IS NOT NULL)),
     CONSTRAINT withdrawal_reason_length CHECK
         (withdrawn_reason IS NULL OR length(withdrawn_reason) BETWEEN 10 AND 500)
@@ -163,6 +233,12 @@ CREATE FUNCTION check_need_insert() RETURNS trigger AS $$
 DECLARE
     lim purpose_limits%ROWTYPE;
 BEGIN
+    IF NEW.need_kind = 'item' THEN
+        IF NOT EXISTS (SELECT 1 FROM item_types WHERE id = NEW.item_type_id AND enabled) THEN
+            RAISE EXCEPTION 'this item type is not available yet';
+        END IF;
+        RETURN NEW;
+    END IF;
     SELECT * INTO lim FROM purpose_limits
         WHERE key = CASE WHEN NEW.purpose = 'medical' THEN 'medical_' || NEW.medical_location ELSE NEW.purpose END;
     IF NOT FOUND THEN
@@ -234,6 +310,9 @@ BEGIN
     SELECT * INTO s FROM settings;
     PERFORM pg_advisory_xact_lock(7001, NEW.supporter_id::int);
     SELECT * INTO n FROM needs WHERE id = NEW.need_id FOR UPDATE;
+    IF FOUND AND n.need_kind <> 'money' THEN
+        RAISE EXCEPTION 'money pledges are for money needs only';
+    END IF;
     IF NOT FOUND OR n.status <> 'published' THEN
         RAISE EXCEPTION 'need is not open for pledges';
     END IF;
@@ -321,6 +400,7 @@ CREATE TRIGGER pledges_fulfil AFTER UPDATE ON pledges
 CREATE FUNCTION cancel_open_pledges() RETURNS trigger AS $$
 BEGIN
     UPDATE pledges SET status = 'cancelled' WHERE need_id = NEW.id AND status = 'pledged';
+    UPDATE item_claims SET status = 'cancelled' WHERE need_id = NEW.id AND status = 'pledged';
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -346,6 +426,135 @@ CREATE TABLE need_events (
     actor_id bigint NOT NULL REFERENCES users(id),
     event    text NOT NULL,
     note     text CHECK (note IS NULL OR length(note) <= 500)
+);
+
+-- ---------------------------------------------------------------- item claims
+-- The item side of a pledge: a donor claims some units of an item need.
+CREATE TABLE item_claims (
+    id             bigserial PRIMARY KEY,
+    need_id        bigint NOT NULL REFERENCES needs(id),
+    donor_id       bigint NOT NULL REFERENCES users(id),
+    units          integer NOT NULL CHECK (units >= 1),
+    ack            boolean NOT NULL CHECK (ack),     -- donor accepted that the requester will learn the contact
+    status         text NOT NULL DEFAULT 'pledged' CHECK (status IN
+        ('pledged', 'sent', 'confirmed', 'disputed', 'expired', 'cancelled')),
+    contact_method text NOT NULL DEFAULT 'other' CHECK (contact_method IN ('phone', 'email', 'whatsapp', 'other')),
+    contact        text NOT NULL CHECK (length(contact) BETWEEN 3 AND 200),   -- verifiers; requester after release
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    expires_at     timestamptz,
+    released_at    timestamptz,                      -- when a verifier passed the contact on
+    released_by    bigint REFERENCES users(id),
+    sent_at        timestamptz,
+    confirmed_at   timestamptz,
+    CONSTRAINT release_has_both CHECK ((released_at IS NULL) = (released_by IS NULL))
+);
+CREATE INDEX item_claims_need ON item_claims (need_id, status);
+CREATE INDEX item_claims_donor ON item_claims (donor_id, status);
+
+-- Same idea as check_pledge: one place, under locks, so concurrent claims cannot oversubscribe
+-- a need. A total of units cannot be a CHECK (it spans rows), so it is a trigger.
+CREATE FUNCTION check_item_claim() RETURNS trigger AS $$
+DECLARE
+    n            needs%ROWTYPE;
+    s            settings%ROWTYPE;
+    active_units bigint;
+    open_count   bigint;
+BEGIN
+    SELECT * INTO s FROM settings;
+    PERFORM pg_advisory_xact_lock(7002, NEW.donor_id::int);
+    SELECT * INTO n FROM needs WHERE id = NEW.need_id FOR UPDATE;
+    IF NOT FOUND OR n.status <> 'published' OR n.need_kind <> 'item' THEN
+        RAISE EXCEPTION 'need is not open for item claims';
+    END IF;
+    IF n.requester_id = NEW.donor_id THEN
+        RAISE EXCEPTION 'cannot claim your own need';
+    END IF;
+    SELECT COALESCE(sum(units), 0) INTO active_units FROM item_claims
+        WHERE need_id = NEW.need_id AND status IN ('pledged', 'sent', 'confirmed', 'disputed');
+    IF active_units + NEW.units > n.quantity_needed THEN
+        RAISE EXCEPTION 'claim would exceed the quantity needed';
+    END IF;
+    SELECT count(*) INTO open_count FROM item_claims
+        WHERE donor_id = NEW.donor_id AND status IN ('pledged', 'sent', 'disputed');
+    IF open_count >= s.max_unconfirmed_pledges THEN
+        RAISE EXCEPTION 'too many unconfirmed claims';
+    END IF;
+    NEW.status := 'pledged';
+    NEW.expires_at := now() + make_interval(days => s.claim_expiry_days);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER item_claims_insert_check BEFORE INSERT ON item_claims
+    FOR EACH ROW EXECUTE FUNCTION check_item_claim();
+
+CREATE FUNCTION check_item_claim_transition() RETURNS trigger AS $$
+BEGIN
+    IF NEW.status = OLD.status THEN
+        RETURN NEW;
+    END IF;
+    IF (OLD.status, NEW.status) IN (
+        ('pledged', 'sent'), ('pledged', 'cancelled'), ('pledged', 'expired'),
+        ('sent', 'confirmed'), ('sent', 'disputed'),
+        ('disputed', 'confirmed'), ('disputed', 'cancelled')) THEN
+        IF NEW.status = 'sent' THEN
+            IF NEW.released_at IS NULL THEN
+                RAISE EXCEPTION 'the verifier has not released the contact yet';
+            END IF;
+            NEW.sent_at := now();
+        END IF;
+        IF NEW.status = 'confirmed' THEN NEW.confirmed_at := now(); END IF;
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'invalid claim status change: % to %', OLD.status, NEW.status;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER item_claims_status_flow BEFORE UPDATE ON item_claims
+    FOR EACH ROW EXECUTE FUNCTION check_item_claim_transition();
+
+-- An item need is fulfilled when confirmed units reach the quantity needed.
+CREATE FUNCTION fulfil_if_items_confirmed() RETURNS trigger AS $$
+DECLARE
+    n    needs%ROWTYPE;
+    conf bigint;
+BEGIN
+    IF NEW.status = 'confirmed' AND OLD.status <> 'confirmed' THEN
+        SELECT * INTO n FROM needs WHERE id = NEW.need_id FOR UPDATE;
+        IF n.status = 'published' THEN
+            SELECT COALESCE(sum(units), 0) INTO conf FROM item_claims
+                WHERE need_id = NEW.need_id AND status = 'confirmed';
+            IF conf >= n.quantity_needed THEN
+                UPDATE needs SET status = 'fulfilled' WHERE id = n.id;
+            END IF;
+        END IF;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER item_claims_fulfil AFTER UPDATE ON item_claims
+    FOR EACH ROW EXECUTE FUNCTION fulfil_if_items_confirmed();
+
+-- Claims nobody handed over expire and free their units.
+CREATE FUNCTION expire_item_claims() RETURNS integer AS $$
+DECLARE k integer;
+BEGIN
+    UPDATE item_claims SET status = 'expired' WHERE status = 'pledged' AND expires_at < now();
+    GET DIAGNOSTICS k = ROW_COUNT;
+    RETURN k;
+END;
+$$ LANGUAGE plpgsql;
+
+-- One proof per claim: a stored photo (file_ref names a file kept outside the database) or a
+-- verifier's recorded reason for waiving it. Once the file is deleted, deleted_at is set.
+CREATE TABLE handover_proofs (
+    id            bigserial PRIMARY KEY,
+    claim_id      bigint NOT NULL UNIQUE REFERENCES item_claims(id),
+    file_ref      text,
+    waived_reason text CHECK (waived_reason IS NULL OR length(waived_reason) BETWEEN 10 AND 500),
+    uploaded_at   timestamptz NOT NULL DEFAULT now(),
+    delete_after  timestamptz,
+    deleted_at    timestamptz,
+    CONSTRAINT photo_or_waiver CHECK
+        (deleted_at IS NOT NULL OR ((file_ref IS NULL) <> (waived_reason IS NULL)))
 );
 
 -- ---------------------------------------------------------------- synthetic twin
@@ -377,11 +586,15 @@ CREATE INDEX needs_synth_person ON needs_synth (person_id, id);
 CREATE VIEW public_needs AS
 SELECT n.id,
        date_trunc('month', n.created_at) AS month,
-       n.purpose, n.medical_location, n.event, n.province, n.district,
+       n.need_kind, n.purpose, n.medical_location, n.event, n.province, n.district,
+       t.category AS item_category, t.name AS item_name, n.quantity_needed, n.used_ok, n.handover_method,
        n.currency, n.goal, b.code AS band, n.public_text,
        COALESCE(p.promised, 0)  AS promised,
        COALESCE(p.confirmed, 0) AS confirmed,
-       COALESCE(p.donors, 0)    AS donors
+       COALESCE(p.donors, 0)    AS donors,
+       COALESCE(ic.promised_units, 0)  AS promised_units,
+       COALESCE(ic.confirmed_units, 0) AS confirmed_units,
+       COALESCE(ic.claimants, 0)       AS claimants
 FROM needs n
 LEFT JOIN LATERAL (SELECT code FROM amount_bands WHERE lo <= n.goal ORDER BY lo DESC LIMIT 1) b
        ON n.currency = 'TRY'
@@ -393,6 +606,15 @@ LEFT JOIN (
     FROM pledges
     WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed')
     GROUP BY need_id) p ON p.need_id = n.id
+LEFT JOIN item_types t ON t.id = n.item_type_id
+LEFT JOIN (
+    SELECT need_id,
+           COALESCE(sum(units), 0) AS promised_units,
+           COALESCE(sum(units) FILTER (WHERE status = 'confirmed'), 0) AS confirmed_units,
+           count(DISTINCT donor_id) AS claimants
+    FROM item_claims
+    WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed')
+    GROUP BY need_id) ic ON ic.need_id = n.id
 WHERE n.status = 'published';
 
 -- Front-page totals: counts and sums over the whole platform, nothing about any one need or person.
@@ -410,7 +632,7 @@ SELECT n.id, n.requester_id::text AS person_id, n.purpose, n.medical_location, n
 FROM needs n
 LEFT JOIN LATERAL (SELECT code FROM amount_bands WHERE lo <= n.goal ORDER BY lo DESC LIMIT 1) b
        ON n.currency = 'TRY'
-WHERE n.status IN ('published', 'fulfilled');
+WHERE n.status IN ('published', 'fulfilled') AND n.need_kind = 'money';
 
 CREATE VIEW synth_analytics AS
 SELECT s.id, s.person_id, s.purpose, s.medical_location, s.event,
@@ -443,7 +665,8 @@ GRANT SELECT ON settings, amount_bands, purpose_limits TO dp_app;
 -- A requester fills in only these columns. Status, verification and text are not insertable,
 -- and payee details cannot be updated after posting (no UPDATE grant on them).
 GRANT SELECT ON needs, pledges, need_events TO dp_app;
-GRANT INSERT (requester_id, purpose, medical_location, event, currency, province, district,
+GRANT INSERT (requester_id, need_kind, item_type_id, quantity_needed, specification, used_ok,
+              handover_method, purpose, medical_location, event, currency, province, district,
               household_size, goal, description, contact_method, contact,
               payee_name, payee_details) ON needs TO dp_app;
 GRANT UPDATE (status, public_text, payee_verified, reviewed_by, reviewed_at, review_note,
@@ -453,6 +676,14 @@ GRANT UPDATE (status) ON pledges TO dp_app;
 GRANT INSERT ON need_events TO dp_app;
 GRANT USAGE ON SEQUENCE needs_id_seq, pledges_id_seq, need_events_id_seq TO dp_app;
 GRANT EXECUTE ON FUNCTION expire_pledges() TO dp_app;
+GRANT SELECT ON item_types, item_claims, handover_proofs TO dp_app;
+GRANT INSERT (need_id, donor_id, units, ack, contact_method, contact) ON item_claims TO dp_app;
+GRANT UPDATE (status, released_at, released_by) ON item_claims TO dp_app;
+GRANT INSERT (claim_id, file_ref, waived_reason, delete_after) ON handover_proofs TO dp_app;
+GRANT UPDATE (file_ref, delete_after, deleted_at) ON handover_proofs TO dp_app;
+GRANT USAGE ON SEQUENCE item_claims_id_seq, handover_proofs_id_seq TO dp_app;
+GRANT EXECUTE ON FUNCTION expire_item_claims() TO dp_app;
+REVOKE DELETE, TRUNCATE ON item_claims, handover_proofs FROM dp_app;
 REVOKE DELETE, TRUNCATE ON needs, pledges FROM dp_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON need_events FROM dp_app;
 
