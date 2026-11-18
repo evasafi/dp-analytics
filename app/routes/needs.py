@@ -4,6 +4,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from app import items
 from app.auth import require_role
 from app.db import engine
 from app.districts import DISTRICTS_BY_PROVINCE
@@ -24,6 +25,7 @@ def _form_page(request, user, status_code, errors, form):
         limits = load_limits(c)
     return render(request, "need_new.html", status_code=status_code, user=user, purposes=PURPOSES, events=EVENTS,
                   provinces=PROVINCES, districts_by_province=DISTRICTS_BY_PROVINCE, errors=errors, form=form,
+                  item_open=items.ITEM_NEEDS_OPEN,
                   limits={k: {"currency": cur, "ceiling": n} for k, (cur, n) in limits.items()})
 
 
@@ -75,6 +77,68 @@ def need_new(request: Request, purpose: str = Form(""), medical_location: str = 
     return RedirectResponse("/needs/mine?done=1", status_code=303)
 
 
+ITEM_FIELDS = ("item_type_id", "quantity_needed", "specification", "used_ok", "handover_method", "province",
+               "district", "household_size", "description", "contact_method", "contact")
+
+
+def _item_form_page(request, user, status_code, errors, form):
+    with engine.connect() as c:
+        groups, _ = items.load_item_types(c)
+    return render(request, "need_item_new.html", status_code=status_code, user=user, groups=groups,
+                  handover_methods=items.HANDOVER_METHODS, provinces=PROVINCES,
+                  districts_by_province=DISTRICTS_BY_PROVINCE, errors=errors, form=form)
+
+
+@router.get("/needs/new/item")
+def item_new_page(request: Request, user=Depends(require_role("requester"))):
+    if not items.ITEM_NEEDS_OPEN:
+        raise HTTPException(status_code=404)
+    return _item_form_page(request, user, 200, [], None)
+
+
+@router.post("/needs/new/item")
+def item_new(request: Request, item_type_id: str = Form(""), quantity_needed: str = Form(""),
+             specification: str = Form(""), used_ok: str = Form(""), handover_method: str = Form(""),
+             province: str = Form(""), district: str = Form(""), household_size: str = Form(""),
+             description: str = Form(""), contact_method: str = Form("other"), contact: str = Form(""),
+             csrf: str = Form(...), user=Depends(require_role("requester"))):
+    if not items.ITEM_NEEDS_OPEN:
+        raise HTTPException(status_code=404)
+    check_csrf(request, csrf)
+    values = dict(zip(ITEM_FIELDS, (item_type_id, quantity_needed, specification, used_ok, handover_method, province,
+                                    district, household_size, description, contact_method, contact)))
+    form = {k: v.strip() for k, v in values.items()}
+    with engine.connect() as c:
+        _, type_ids = items.load_item_types(c)
+    errors = items.item_problems(form, type_ids)
+    if errors:
+        return _item_form_page(request, user, 400, errors, form)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 8000000 + user.id})
+            pending = conn.execute(
+                text("SELECT count(*) FROM needs WHERE requester_id = :u AND status = 'pending'"),
+                {"u": user.id}).scalar_one()
+            if pending >= MAX_PENDING:
+                return _item_form_page(request, user, 429, [
+                    f"You already have {MAX_PENDING} needs waiting for review. Please wait for a verifier."], form)
+            nid = conn.execute(
+                text("INSERT INTO needs (requester_id, need_kind, item_type_id, quantity_needed, specification, "
+                     "used_ok, handover_method, province, district, household_size, description, contact_method, "
+                     "contact) VALUES (:u, 'item', :it, :q, :sp, :us, :hm, :pv, :di, :hh, :de, :cm, :co) "
+                     "RETURNING id"),
+                {"u": user.id, "it": int(form["item_type_id"]), "q": int(form["quantity_needed"]),
+                 "sp": form["specification"] or None, "us": form["used_ok"] == "used",
+                 "hm": form["handover_method"], "pv": form["province"], "di": form["district"],
+                 "hh": int(form["household_size"]), "de": form["description"], "cm": form["contact_method"],
+                 "co": form["contact"]}).scalar_one()
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event) VALUES (:n, :u, 'submitted')"),
+                         {"n": nid, "u": user.id})
+    except DBAPIError:
+        return _item_form_page(request, user, 400, ["The need could not be saved. Check the form and try again."], form)
+    return RedirectResponse("/needs/mine?done=1", status_code=303)
+
+
 RECEIPT_TEXT = {"sent": "The donor says it was sent", "disputed": "You said it did not arrive. A verifier is looking at it",
                 "confirmed": "You confirmed it arrived"}
 OUTCOME_TEXT = {"dispute_arrived": "You said it did not arrive. A verifier checked and found it did. It now counts as confirmed",
@@ -95,13 +159,14 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
             "AND e.event IN ('dispute_arrived', 'dispute_not_arrived')"), {"u": user.id}).all()
         rows = c.execute(text(
             "SELECT n.id, n.created_at, n.purpose, n.medical_location, n.province, n.district, n.currency, n.goal, "
+            "n.need_kind, n.quantity_needed, t.name AS item_name, "
             "n.status, n.description, n.review_note, n.withdrawn_reason, "
             "COALESCE(p.promised, 0) AS promised, COALESCE(p.confirmed, 0) AS confirmed, COALESCE(p.donors, 0) AS donors "
             "FROM needs n LEFT JOIN (SELECT need_id, sum(amount_need) AS promised, "
             "COALESCE(sum(amount_need) FILTER (WHERE status = 'confirmed'), 0) AS confirmed, "
             "count(DISTINCT supporter_id) AS donors FROM pledges "
             "WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed') GROUP BY need_id) p ON p.need_id = n.id "
-            "WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
+            "LEFT JOIN item_types t ON t.id = n.item_type_id WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
     by_need = {}
     outcome = {s.id: s.event for s in settled}
     for p in sent:
@@ -119,8 +184,9 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
                 parts.append(("promised %s more" if r.confirmed else "%s promised") % money(r.promised - r.confirmed, r.currency))
             parts.append("%d donor%s" % (r.donors, "" if r.donors == 1 else "s"))
             funding = ", ".join(parts) + "."
-        shown.append({"id": r.id, "created": r.created_at.strftime("%Y-%m-%d"), "label": need_label(r.purpose, r.medical_location),
-                      "place": f"{r.district}, {r.province}", "goal": money(r.goal, r.currency),
+        shown.append({"id": r.id, "created": r.created_at.strftime("%Y-%m-%d"), "label": ("Item: " + r.item_name if r.need_kind == "item" else need_label(r.purpose, r.medical_location)),
+                      "place": f"{r.district}, {r.province}", "goal": (f"{r.quantity_needed} unit{'' if r.quantity_needed == 1 else 's'}" if r.need_kind == "item"
+                 else money(r.goal, r.currency)),
                       "status": STATUS_TEXT[r.status], "funding": funding, "description": r.description,
                       "review_note": r.review_note, "withdrawn_reason": r.withdrawn_reason,
                       "can_withdraw": r.status in ("pending", "published"), "pledges": by_need.get(r.id, [])})

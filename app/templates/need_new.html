@@ -6,6 +6,7 @@
   {% set sel_dist = f.get('district') or '' %}
   <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/mine">My needs</a></p>
   <h3>Post a need</h3>
+  {% if item_open %}<p class="note">Need an item instead of money? <a href="/needs/new/item">Post an item need</a>.</p>{% endif %}
   <p class="note">A verifier reviews every need before anything is public. Your description, household size, contact and account details are seen only by verifiers. Donors see the account details only after they pledge. The public board shows a short text the verifier approves, with your district and no name. After you submit, a verifier will contact you and ask to see a supporting document, such as a bill, an invoice or a quote.</p>
   {% if errors %}<div class="error"><p><strong>Nothing was saved.</strong> Fix these and try again:</p><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
   <form method="post" action="/needs/new">

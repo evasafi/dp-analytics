@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Post an item need{% endblock %}
+{% block content %}
+  {% set f = form or {} %}
+  {% set sel_prov = f.get('province') if f.get('province') in districts_by_province else provinces[0][1] %}
+  {% set sel_dist = f.get('district') or '' %}
+  <p>Signed in as <strong>{{ user.username }}</strong> (requester). <a href="/needs/mine">My needs</a></p>
+  <h3>Post an item need</h3>
+  <p class="note">Need money instead of an item? <a href="/needs/new">Post a money need</a>.</p>
+  <p class="note">A verifier reviews every need before anything is public. Your description, household size and contact are seen only by verifiers. The public board shows a short text the verifier approves, with your district and no name. When someone offers to help, a verifier passes their contact to you, and you then contact them to agree the handover. Your own contact stays with verifiers. No address is stored here.</p>
+  {% if errors %}<div class="error"><p><strong>Nothing was saved.</strong> Fix these and try again:</p><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+  <form method="post" action="/needs/new/item">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>What do you need?
+      <select name="item_type_id" required>
+        <option value="">Choose one</option>
+        {% for g in groups %}<optgroup label="{{ g.label }}">{% for tid, tname in g.types %}<option value="{{ tid }}"{% if f.get('item_type_id') == tid|string %} selected{% endif %}>{{ tname }}</option>{% endfor %}</optgroup>{% endfor %}
+      </select></label></p>
+    <p><label>How many? (1 to 50)
+      <input name="quantity_needed" type="number" min="1" max="50" step="1" inputmode="numeric" value="{{ f.get('quantity_needed', '') }}" required></label></p>
+    <p><label>Size, model or anything the donor should know (optional, up to 300 characters)<br><textarea name="specification" rows="3" cols="60" maxlength="300">{{ f.get('specification', '') }}</textarea></label><br>
+      <span class="note">Seen by verifiers. Do not write names or phone numbers.</span></p>
+    <fieldset>
+      <legend>Condition</legend>
+      <label><input type="radio" name="used_ok" value="used"{% if f.get('used_ok') == 'used' %} checked{% endif %} required> A used item is fine</label>
+      <label><input type="radio" name="used_ok" value="new"{% if f.get('used_ok') == 'new' %} checked{% endif %}> New only</label>
+    </fieldset>
+    <p><label>How would you prefer to receive it?
+      <select name="handover_method" required>
+        <option value="">Choose one</option>
+        {% for key, label in handover_methods %}<option value="{{ key }}"{% if f.get('handover_method') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label><br>
+      <span class="note">Meeting in a public place in daylight is the safest way and the one we recommend. Any handover in person or by courier reveals who you are to the donor or the courier. This site does not see the handover and cannot guarantee anyone's safety.</span></p>
+    <p><label>Province <select name="province" id="province">{% for code, name, lat, lon in provinces %}<option value="{{ name }}"{% if name == sel_prov %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+       <label>District <select name="district" id="district">{% for d in districts_by_province[sel_prov] %}<option value="{{ d }}"{% if d == sel_dist %} selected{% endif %}>{{ d }}</option>{% endfor %}</select></label></p>
+    <p><label>People in your household
+      <select name="household_size" required>
+        <option value="">Choose</option>
+        {% for i in range(1, 13) %}<option value="{{ i }}"{% if f.get('household_size') == i|string %} selected{% endif %}>{{ i }}</option>{% endfor %}
+      </select></label>
+      <span class="note">Private. It is never shown on the board.</span></p>
+    <p><label>What is needed and why (10 to 1000 characters)<br><textarea name="description" rows="5" cols="60" minlength="10" maxlength="1000" required>{{ f.get('description', '') }}</textarea></label></p>
+    <p><label>How a verifier can reach you
+      <select name="contact_method" id="contact_method">
+        <option value="phone"{% if f.get('contact_method') == 'phone' %} selected{% endif %}>Phone number</option>
+        <option value="email"{% if f.get('contact_method') == 'email' %} selected{% endif %}>Email address</option>
+        <option value="whatsapp"{% if f.get('contact_method') == 'whatsapp' %} selected{% endif %}>WhatsApp number</option>
+        <option value="other"{% if f.get('contact_method') == 'other' %} selected{% endif %}>Other</option>
+      </select></label>
+    <label><input name="contact" id="contact" maxlength="200" value="{{ f.get('contact', '') }}" required></label></p>
+    <p><button type="submit">Submit for review</button></p>
+  </form>
+  <hr>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+  <script type="application/json" id="districts-data">{{ districts_by_province|tojson }}</script>
+  <script>
+    (function () {
+      var data = JSON.parse(document.getElementById('districts-data').textContent);
+      var prov = document.getElementById('province'), dist = document.getElementById('district');
+      var keep = {{ sel_dist|tojson }}, first = true;
+      function fill() {
+        var list = data[prov.value] || [];
+        dist.innerHTML = '';
+        list.forEach(function (n) {
+          var o = document.createElement('option');
+          o.value = n; o.textContent = n;
+          if (first && n === keep) o.selected = true;
+          dist.appendChild(o);
+        });
+        first = false;
+      }
+      prov.addEventListener('change', fill);
+      fill();
+    })();
+  </script>
+  <script>
+    (function () {
+      var sel = document.getElementById('contact_method'), box = document.getElementById('contact');
+      var hints = {phone: ['tel', '+90 5xx xxx xx xx'], email: ['email', 'name@example.com'],
+                   whatsapp: ['tel', '+90 5xx xxx xx xx'], other: ['text', 'Say how a verifier can reach you']};
+      function update() { var h = hints[sel.value]; box.type = h[0]; box.placeholder = h[1]; }
+      sel.addEventListener('change', update);
+      update();
+    })();
+  </script>
+{% endblock %}
