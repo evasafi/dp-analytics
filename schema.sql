@@ -624,11 +624,13 @@ SELECT (SELECT count(*) FROM needs WHERE status = 'published')                  
 -- text, is the person key for the per-person cap. Nothing private is listed here.
 CREATE VIEW needs_analytics AS
 SELECT n.id, n.requester_id::text AS person_id, n.purpose, n.medical_location, n.event,
-       n.province, n.household_size, n.currency, n.goal, b.code AS band, n.status, n.created_at
+       n.province, n.household_size, n.currency, n.goal, b.code AS band, n.status, n.created_at,
+       n.need_kind::text AS kind, it.category AS item_category
 FROM needs n
+LEFT JOIN item_types it ON it.id = n.item_type_id
 LEFT JOIN LATERAL (SELECT code FROM amount_bands WHERE lo <= n.goal ORDER BY lo DESC LIMIT 1) b
        ON n.currency = 'TRY'
-WHERE n.status IN ('published', 'fulfilled') AND n.need_kind = 'money';
+WHERE n.status IN ('published', 'fulfilled');
 
 CREATE VIEW synth_analytics AS
 SELECT s.id, s.person_id, s.purpose, s.medical_location, s.event,

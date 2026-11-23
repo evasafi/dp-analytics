@@ -36,17 +36,24 @@ DIMS = {
     "province": ("province", [p[1] for p in PROVINCES]),
     "status": ("status", ["published", "fulfilled"]),
     "band": ("band", None),   # lira needs only; euro needs have no band and land in no cell
+    "kind": ("kind", ["money", "item"]),
+    "item_category": ("item_category", None),   # the categories come from item_types
 }
+# These read columns that only the live view has, so the synthetic dataset cannot be grouped by them.
+LIVE_ONLY = frozenset(["kind", "item_category"])
 ALLOWED_GROUPINGS = {frozenset(["need_type"]), frozenset(["province"]), frozenset(["status"]),
-                     frozenset(["need_type", "status"]), frozenset(["band"])}
+                     frozenset(["need_type", "status"]), frozenset(["band"]),
+                     frozenset(["kind"]), frozenset(["item_category"]), frozenset(["item_category", "status"])}
 
 
 def dim_values(d: str) -> list:
     """The fixed values of a dimension. Goal bands come from the amount_bands reference table, not from any need."""
     values = DIMS[d][1]
     if values is None:
+        sql = {"band": "SELECT code FROM amount_bands ORDER BY code",
+               "item_category": "SELECT DISTINCT category FROM item_types ORDER BY category"}[d]
         with engine.connect() as c:
-            values = [r[0] for r in c.execute(text("SELECT code FROM amount_bands ORDER BY code"))]
+            values = [r[0] for r in c.execute(text(sql))]
     return values
 
 
@@ -68,6 +75,8 @@ def validate_needs(spec: Spec, dataset: str) -> None:
         raise ValueError("repeated dimension")
     if any(d not in DIMS for d in spec.group_by):
         raise ValueError("unknown dimension")
+    if any(d in LIVE_ONLY for d in spec.group_by) and SOURCES[dataset] != "needs_analytics":
+        raise ValueError("this dimension exists only on platform data")
     if frozenset(spec.group_by) not in ALLOWED_GROUPINGS:
         raise ValueError("this grouping is not allowed")
     if cell_count(spec) > MAX_CELLS:

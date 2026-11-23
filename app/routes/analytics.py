@@ -20,7 +20,10 @@ router = APIRouter()
 GROUPINGS = {"need_type": (("need_type",), "Need type"), "province": (("province",), "Province"),
              "status": (("status",), "Status (on the board or fully funded)"),
              "need_type_status": (("need_type", "status"), "Need type and status"),
-             "band": (("band",), "Goal band (lira needs only)")}
+             "band": (("band",), "Goal band (lira needs only)"),
+             "kind": (("kind",), "Kind of need, money or item (platform data only)"),
+             "item_category": (("item_category",), "Item category (platform data only)"),
+             "item_category_status": (("item_category", "status"), "Item category and status (platform data only)")}
 PAGE_DATASETS = ("needs_synthetic", "needs_live")
 
 

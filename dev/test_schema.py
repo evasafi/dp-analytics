@@ -256,7 +256,7 @@ try:
                "review_note", "reviewed_by", "withdrawn_reason", "payee_verified"}
     check("public_needs lists no private column", not (set(cols("public_needs")) & PRIVATE))
     check("needs_analytics lists no private column except household size", not ((set(cols("needs_analytics")) & PRIVATE) - {"household_size"}))
-    check("synth_analytics has the same columns as needs_analytics", cols("synth_analytics") == cols("needs_analytics"))
+    check("synth_analytics has the same columns as needs_analytics plus kind and item_category", type(cols("synth_analytics"))(list(cols("synth_analytics")) + ["kind", "item_category"]) == cols("needs_analytics"))
     check("the board shows only published needs",
           {r[0] for r in run(engine, "SELECT id FROM public_needs")[1]} == {r[0] for r in run(admin, "SELECT id FROM needs WHERE status = 'published'")[1]})
     pn = run(engine, "SELECT id, promised, confirmed, donors FROM public_needs WHERE id = :i", i=cid)[1][0]

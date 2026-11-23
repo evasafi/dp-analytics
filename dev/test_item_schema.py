@@ -194,8 +194,8 @@ try:
     print("-- views")
     r = row(owner, "SELECT need_kind, quantity_needed, promised_units, confirmed_units FROM public_needs WHERE id = :n", {"n": needB})
     check("public_needs shows the item need with its units", tuple(r) == ("item", 3, 3, 0), str(tuple(r)))
-    check("needs_analytics hides item needs",
-          run(owner, "SELECT count(*) FROM needs_analytics WHERE id = :n", {"n": needB}) == 0)
+    check("needs_analytics shows the verified item need as kind item",
+          run(owner, "SELECT kind FROM needs_analytics WHERE id = :n", {"n": needB}) == "item")
 
     print("-- grants for the app role")
     check("the app role can read item_types", run(app_engine, "SELECT count(*) FROM item_types") > 0)
