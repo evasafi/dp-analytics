@@ -7,6 +7,8 @@
   {% if done == "resolved" %}<p><strong>Dispute settled.</strong></p>{% endif %}
   {% if done == "released" %}<p><strong>Released. The requester can now see the donor's contact.</strong></p>{% endif %}
   {% if done == "declined" %}<p><strong>Declined. The donor will see your reason.</strong></p>{% endif %}
+  {% if done == "waived" %}<p><strong>Photo requirement waived. The donor can now mark the items as handed over.</strong></p>{% endif %}
+  {% if done == "settled" %}<p><strong>Handover dispute settled.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>
   {% if not rows %}<p>Nothing is waiting.</p>{% else %}
   <table>
@@ -24,6 +26,16 @@
     <tr><th>Offered</th><th>Item</th><th>Place</th><th></th></tr>
     {% for o in offers %}
     <tr data-offer="{{ o.id }}"><td style="white-space: nowrap">{{ o.created }}</td><td>{{ o.label }}</td><td>{{ o.place }}</td><td><a href="/verify/claims/{{ o.id }}">open</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Disputed item handovers</h3>
+  <p class="note">The requester says the items did not arrive. Open the offer, look at the photo and decide.</p>
+  {% if not item_disputes %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>Handed over</th><th>Item</th><th>Place</th><th></th></tr>
+    {% for o in item_disputes %}
+    <tr data-dispute="{{ o.id }}"><td style="white-space: nowrap">{{ o.created }}</td><td>{{ o.label }}</td><td>{{ o.place }}</td><td><a href="/verify/claims/{{ o.id }}">open</a></td></tr>
     {% endfor %}
   </table>
   {% endif %}

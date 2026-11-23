@@ -142,7 +142,7 @@ INSERT INTO item_types (category, name, enabled) VALUES
     ('medical_equipment', 'Diabetic supplies', false),
     ('heating', 'Electric heater', true),
     ('heating', 'Wood or coal stove', true),
-    ('heating', 'Gas cylinder', true),
+    ('heating', 'Gas cylinder', false),
     ('heating', 'Firewood', true),
     ('clothing', 'Coat', true),
     ('clothing', 'Fleece', true),
@@ -162,7 +162,7 @@ INSERT INTO item_types (category, name, enabled) VALUES
     ('food', 'Canned food', true),
     ('food', 'Staples', true),
     ('power_comms', 'Power bank', true),
-    ('power_comms', 'Generator', true),
+    ('power_comms', 'Generator', false),
     ('power_comms', 'Phone', true),
     ('other', 'Other (described to the verifier)', true);
 

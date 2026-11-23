@@ -7,6 +7,7 @@
   {% if done == "cancelled" %}<p><strong>Your pledge was cancelled and the amount is open again.</strong></p>{% endif %}
   {% if done == "claimed" %}<p><strong>Thank you. A verifier will pass your contact to the requester, who will get in touch. Agree the handover with them.</strong></p>{% endif %}
   {% if done == "claim_cancelled" %}<p><strong>Your offer was cancelled and the units are open again.</strong></p>{% endif %}
+  {% if done == "claim_sent" %}<p><strong>Marked as handed over. The requester will confirm that they received the items.</strong></p>{% endif %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <h3>My pledges ({{ unconfirmed }} of {{ max_unconfirmed }} not yet confirmed)</h3>
   {% if not rows %}<p>You have not pledged yet. Choose a need on the <a href="/board">board</a>.</p>{% else %}
@@ -34,7 +35,7 @@
     <tr data-claim="{{ r.id }}">
       <td style="white-space: nowrap">{{ r.created }}</td><td><a href="/board/{{ r.nid }}">{{ r.label }}</a></td><td>{{ r.place }}</td><td>{{ r.units }}</td>
       <td>{{ r.status }}{% if r.expires %}<br>by {{ r.expires }}{% endif %}{% if r.declined %}<br><em>Reason: {{ r.declined }}</em>{% endif %}{% if r.need_status %}<br><em>Need: {{ r.need_status }}</em>{% endif %}{% if r.withdrawn_reason %}<br><em>The requester withdrew this need: {{ r.withdrawn_reason }}</em>{% endif %}{% if r.handover %}<br>The requester's preferred handover: {{ r.handover }}{% endif %}</td>
-      <td>{% if r.pledged %}<form method="post" action="/support/claims/{{ r.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>{% endif %}</td>
+      <td>{% if r.pledged and r.released %}<a href="/support/claims/{{ r.id }}/handover">Mark as handed over</a><br>{% endif %}{% if r.pledged %}<form method="post" action="/support/claims/{{ r.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>

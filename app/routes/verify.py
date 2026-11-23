@@ -9,6 +9,7 @@ from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
 from app.routes.board import _expire
+from app.proofs import KEEP_SQL, photo_response
 from app.validation import public_text_problem
 from app.web import check_csrf, render
 
@@ -94,6 +95,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
             "SELECT k.id, k.units, k.created_at, t.name AS item_name, n.province, n.district FROM item_claims k "
             "JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
             "WHERE k.status = 'pledged' AND k.released_at IS NULL ORDER BY k.id LIMIT 50")).all()
+        idisputes = c.execute(text(
+            "SELECT k.id, k.units, k.sent_at, t.name AS item_name, n.province, n.district FROM item_claims k "
+            "JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE k.status = 'disputed' ORDER BY k.id LIMIT 50")).all()
         unanswered = c.execute(text(PLEDGE_LIST.format("p.status = 'sent' AND p.sent_at < now() - make_interval(days => :d)")),
                                {"d": UNANSWERED_DAYS}).all()
     rows = [{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -106,7 +111,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
                   disputed=_pledge_rows(disputed), unanswered=_pledge_rows(unanswered), days=UNANSWERED_DAYS,
                   offers=[{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
                            "label": f"{r.item_name}, {_units(r.units)}", "place": f"{r.district}, {r.province}"}
-                          for r in offers])
+                          for r in offers],
+                  item_disputes=[{"id": r.id, "created": r.sent_at.strftime("%Y-%m-%d %H:%M"),
+                                  "label": f"{r.item_name}, {_units(r.units)}", "place": f"{r.district}, {r.province}"}
+                                 for r in idisputes])
 
 
 @router.get("/verify/{nid}")
@@ -275,7 +283,7 @@ def _claim_page(request, user, k, status_code=200, error=None, reason=""):
     history = ", ".join(f"{e.cnt} {e.status}" for e in earlier) or "none"
     status_text = CLAIM_STATUS[k.status] if not (k.status == "pledged" and k.released_at is not None) else "Contact released"
     return render(request, "verify_claim.html", status_code=status_code, user=user, k=k, history=history,
-                  status_text=status_text, error=error, reason=reason,
+                  status_text=status_text, error=error, reason=reason, **_claim_extras(k),
                   handover_label=dict(items.HANDOVER_METHODS).get(k.handover_method, "").replace(" (recommended)", ""))
 
 
@@ -326,3 +334,71 @@ def verify_claim_decline(request: Request, cid: int, reason: str = Form(""), csr
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_declined', :p)"),
                      {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {reason}"})
     return RedirectResponse("/verify?done=declined", status_code=303)
+
+
+def _claim_extras(k):
+    with engine.connect() as c:
+        proof = c.execute(text(
+            "SELECT (file_ref IS NOT NULL AND deleted_at IS NULL) AS has_photo, (deleted_at IS NOT NULL) AS gone, waived_reason "
+            "FROM handover_proofs WHERE claim_id = :c"), {"c": k.id}).one_or_none()
+        note = c.execute(text(
+            "SELECT e.note FROM need_events e WHERE e.need_id = :n AND e.event = 'claim_disputed' AND starts_with(e.note, :p) "
+            "ORDER BY e.id DESC LIMIT 1"), {"n": k.need_id, "p": f"claim {k.id}: "}).scalar()
+    return {"proof": proof, "dispute": note.split(": ", 1)[1] if note else None}
+
+
+@router.post("/verify/claims/{cid}/waive")
+def verify_claim_waive(request: Request, cid: int, reason: str = Form(""), csrf: str = Form(...),
+                       user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    reason = reason.strip()
+    if not 10 <= len(reason) <= 500:
+        return _claim_page(request, user, k, 400, error="Write a reason of 10 to 500 characters.")
+    with engine.begin() as conn:
+        done = conn.execute(text(
+            "INSERT INTO handover_proofs (claim_id, waived_reason) SELECT CAST(:c AS bigint), CAST(:r AS text) "
+            "WHERE EXISTS (SELECT 1 FROM item_claims WHERE id = :c AND status = 'pledged' AND released_at IS NOT NULL) "
+            "ON CONFLICT (claim_id) DO NOTHING RETURNING id"), {"c": cid, "r": reason}).first()
+        if done is None:
+            return _claim_page(request, user, k, 409, error="The photo cannot be waived for this offer now (not released, already handed over, or already waived). Nothing was changed.")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_photo_waived', :p)"),
+                     {"n": k.need_id, "a": user.id, "p": f"claim {cid}: {reason}"})
+    return RedirectResponse("/verify?done=waived", status_code=303)
+
+
+@router.post("/verify/claims/{cid}/settle")
+def verify_claim_settle(request: Request, cid: int, outcome: str = Form(""), reason: str = Form(""), csrf: str = Form(...),
+                        user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    reason = reason.strip()
+    if outcome not in ("confirm", "cancel"):
+        return _claim_page(request, user, k, 400, error="Choose how to settle the dispute.")
+    if not 10 <= len(reason) <= 450:
+        return _claim_page(request, user, k, 400, error="Write a reason of 10 to 450 characters.")
+    new = "confirmed" if outcome == "confirm" else "cancelled"
+    with engine.begin() as conn:
+        done = conn.execute(text("UPDATE item_claims SET status = :s WHERE id = :c AND status = 'disputed' RETURNING need_id"),
+                            {"s": new, "c": cid}).one_or_none()
+        if done is None:
+            return _claim_page(request, user, k, 409, error="This offer is not in dispute any more. Nothing was changed.")
+        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_settled', :p)"),
+                     {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {outcome}: {reason}"})
+        conn.execute(text(KEEP_SQL), {"c": cid})
+    return RedirectResponse("/verify?done=settled", status_code=303)
+
+
+@router.get("/verify/claims/{cid}/photo")
+def verify_claim_photo(cid: int, user=Depends(require_role("verifier"))):
+    with engine.connect() as c:
+        ref = c.execute(text("SELECT file_ref FROM handover_proofs WHERE claim_id = :c AND deleted_at IS NULL"), {"c": cid}).scalar()
+    if ref is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return photo_response(ref)
