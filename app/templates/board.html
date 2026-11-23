@@ -7,6 +7,7 @@
   <h3>Needs board</h3>
   <p class="note">Every need here was reviewed by a verifier before it appeared. {% if not viewer %}To pledge, create a supporter account.{% elif viewer.role == "supporter" %}You can pledge to any need below.{% else %}Pledges are made from supporter accounts.{% endif %} You send money straight to the requester's account, and nothing passes through this site.</p>
   <p class="note" id="stats">So far: <strong>{{ stats.fulfilled }}</strong> need{{ "" if stats.fulfilled == 1 else "s" }} fulfilled, <strong>{{ stats.confirmed }}</strong> confirmed by requesters, from <strong>{{ stats.donors }}</strong> donor{{ "" if stats.donors == 1 else "s" }}. Every figure is demo data.</p>
+  {% if stats.show_items %}<p class="note" id="item-stats">Items: <strong>{{ stats.fulfilled_items }}</strong> of the fulfilled needs {{ "was an item need" if stats.fulfilled_items == 1 else "were item needs" }}. Requesters confirmed <strong>{{ stats.units }}</strong> unit{{ "" if stats.units == 1 else "s" }} of items, from <strong>{{ stats.claimants }}</strong> donor{{ "" if stats.claimants == 1 else "s" }}. Every figure is demo data.</p>{% endif %}
   <form method="get" action="/board">
     <label>Purpose <select name="purpose"><option value="">All</option>
       {% for key, label in purposes %}<option value="{{ key }}" {% if key == purpose %}selected{% endif %}>{{ label }}</option>{% endfor %}

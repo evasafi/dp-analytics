@@ -112,7 +112,9 @@ def _card(r):
 
 
 def _stats_card(r):
-    return {"fulfilled": r.fulfilled_needs, "confirmed": money(r.confirmed_try, "TRY"), "donors": r.donors}
+    return {"fulfilled": r.fulfilled_needs, "confirmed": money(r.confirmed_try, "TRY"), "donors": r.donors,
+            "fulfilled_items": r.fulfilled_items, "units": r.confirmed_units, "claimants": r.claimants,
+            "show_items": items.ITEM_NEEDS_OPEN or bool(r.fulfilled_items or r.confirmed_units or r.claimants)}
 
 
 @router.get("/board")
@@ -141,7 +143,7 @@ def board(request: Request, purpose: str = "", province: str = "", kind: str = "
         total = c.execute(text(f"SELECT count(*) FROM public_needs WHERE {w}"), params).scalar_one()
         rows = c.execute(text(f"SELECT {COLUMNS} FROM public_needs WHERE {w} ORDER BY {SORTS[sort]} LIMIT :lim OFFSET :off"),
                          {**params, "lim": PAGE_SIZE, "off": (page - 1) * PAGE_SIZE}).all()
-        stats = _stats_card(c.execute(text("SELECT fulfilled_needs, confirmed_try, donors FROM public_stats")).one())
+        stats = _stats_card(c.execute(text("SELECT fulfilled_needs, confirmed_try, donors, fulfilled_items, confirmed_units, claimants FROM public_stats")).one())
 
     def link(n):
         q = {k: v for k, v in (("purpose", purpose), ("province", province), ("kind", kind), ("category", category),

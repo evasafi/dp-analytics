@@ -29,8 +29,8 @@ with engine.connect() as c:
     rows = c.execute(text("SELECT * FROM public_stats")).mappings().all()
     check("the view returns exactly one row", len(rows) == 1, len(rows))
     row = rows[0]
-    check("the view has only the four total columns",
-          set(row.keys()) == {"open_needs", "fulfilled_needs", "confirmed_try", "donors"}, sorted(row.keys()))
+    check("the view has only the seven total columns",
+          set(row.keys()) == {"open_needs", "fulfilled_needs", "confirmed_try", "donors", "fulfilled_items", "confirmed_units", "claimants"}, sorted(row.keys()))
     want_open = c.execute(text("SELECT count(*) FROM needs WHERE status = 'published'")).scalar_one()
     want_done = c.execute(text("SELECT count(*) FROM needs WHERE status = 'fulfilled'")).scalar_one()
     want_try = c.execute(text("SELECT COALESCE(sum(amount_try), 0) FROM pledges WHERE status = 'confirmed'")).scalar_one()

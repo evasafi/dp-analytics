@@ -615,7 +615,10 @@ CREATE VIEW public_stats AS
 SELECT (SELECT count(*) FROM needs WHERE status = 'published')                         AS open_needs,
        (SELECT count(*) FROM needs WHERE status = 'fulfilled')                         AS fulfilled_needs,
        COALESCE((SELECT sum(amount_try) FROM pledges WHERE status = 'confirmed'), 0)   AS confirmed_try,
-       (SELECT count(DISTINCT supporter_id) FROM pledges WHERE status = 'confirmed')   AS donors;
+       (SELECT count(DISTINCT supporter_id) FROM pledges WHERE status = 'confirmed')   AS donors,
+       (SELECT count(*) FROM needs WHERE status = 'fulfilled' AND need_kind = 'item')  AS fulfilled_items,
+       COALESCE((SELECT sum(units) FROM item_claims WHERE status = 'confirmed'), 0)   AS confirmed_units,
+       (SELECT count(DISTINCT donor_id) FROM item_claims WHERE status = 'confirmed')  AS claimants;
 
 -- What analytics may read: verified needs, safe columns only. The requester id, cast to
 -- text, is the person key for the per-person cap. Nothing private is listed here.
