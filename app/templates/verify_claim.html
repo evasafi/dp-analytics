@@ -49,6 +49,16 @@
     {% elif proof.gone %}<p>The photo was deleted after the retention period.</p>{% endif %}
   {% endif %}
   {% if dispute %}<p><strong>The requester's reason for the dispute:</strong> {{ dispute }}</p>{% endif %}
+  {% if k.status == "sent" and overdue %}
+  <h3>Handed over, no answer from the requester</h3>
+  <p class="note">The donor handed these over more than {{ wait_days }} days ago and the requester has not confirmed. Contact the requester outside the platform first. Then confirm on their behalf (they told you they received the items) or open a dispute (they did not, or you cannot reach them). Your reason is recorded.</p>
+  <form method="post" action="/verify/claims/{{ k.id }}/chase">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><textarea name="reason" rows="3" cols="60" minlength="10" maxlength="450" placeholder="What did you find out? (10 to 450 characters)" required></textarea></p>
+    <p><button type="submit" name="outcome" value="confirm">Confirm on the requester's behalf</button>
+       <button type="submit" name="outcome" value="dispute">Open a dispute</button></p>
+  </form>
+  {% endif %}
   {% if k.status == "disputed" %}
   <h3>Settle the dispute</h3>
   <p class="note">Look at the photo and the reason, and contact both people outside the platform if needed. Your decision and reason are recorded.</p>

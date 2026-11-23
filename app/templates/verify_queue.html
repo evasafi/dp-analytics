@@ -9,6 +9,7 @@
   {% if done == "declined" %}<p><strong>Declined. The donor will see your reason.</strong></p>{% endif %}
   {% if done == "waived" %}<p><strong>Photo requirement waived. The donor can now mark the items as handed over.</strong></p>{% endif %}
   {% if done == "settled" %}<p><strong>Handover dispute settled.</strong></p>{% endif %}
+  {% if done == "chased" %}<p><strong>Offer updated. The handover was confirmed or a dispute was opened.</strong></p>{% endif %}
   <h3>Needs waiting for review</h3>
   {% if not rows %}<p>Nothing is waiting.</p>{% else %}
   <table>
@@ -26,6 +27,16 @@
     <tr><th>Offered</th><th>Item</th><th>Place</th><th></th></tr>
     {% for o in offers %}
     <tr data-offer="{{ o.id }}"><td style="white-space: nowrap">{{ o.created }}</td><td>{{ o.label }}</td><td>{{ o.place }}</td><td><a href="/verify/claims/{{ o.id }}">open</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <h3>Handed over, waiting for the requester</h3>
+  <p class="note">The donor handed these over more than {{ days }} days ago and the requester has not answered. Contact the requester outside the platform, then confirm on their behalf or open a dispute.</p>
+  {% if not item_waiting %}<p>None.</p>{% else %}
+  <table>
+    <tr><th>Handed over</th><th>Item</th><th>Place</th><th></th></tr>
+    {% for o in item_waiting %}
+    <tr data-waiting="{{ o.id }}"><td style="white-space: nowrap">{{ o.created }}</td><td>{{ o.label }}</td><td>{{ o.place }}</td><td><a href="/verify/claims/{{ o.id }}">open</a></td></tr>
     {% endfor %}
   </table>
   {% endif %}

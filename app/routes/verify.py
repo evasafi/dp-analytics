@@ -99,6 +99,11 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
             "SELECT k.id, k.units, k.sent_at, t.name AS item_name, n.province, n.district FROM item_claims k "
             "JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
             "WHERE k.status = 'disputed' ORDER BY k.id LIMIT 50")).all()
+        iwaiting = c.execute(text(
+            "SELECT k.id, k.units, k.sent_at, t.name AS item_name, n.province, n.district FROM item_claims k "
+            "JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
+            "WHERE k.status = 'sent' AND k.sent_at < now() - make_interval(days => :d) ORDER BY k.sent_at LIMIT 50"),
+            {"d": int(UNANSWERED_DAYS)}).all()
         unanswered = c.execute(text(PLEDGE_LIST.format("p.status = 'sent' AND p.sent_at < now() - make_interval(days => :d)")),
                                {"d": UNANSWERED_DAYS}).all()
     rows = [{"id": r.id, "created": r.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -114,7 +119,10 @@ def verify_queue(request: Request, done: str = "", need: int = 0, user=Depends(r
                           for r in offers],
                   item_disputes=[{"id": r.id, "created": r.sent_at.strftime("%Y-%m-%d %H:%M"),
                                   "label": f"{r.item_name}, {_units(r.units)}", "place": f"{r.district}, {r.province}"}
-                                 for r in idisputes])
+                                 for r in idisputes],
+                  item_waiting=[{"id": r.id, "created": r.sent_at.strftime("%Y-%m-%d %H:%M"),
+                                 "label": f"{r.item_name}, {_units(r.units)}", "place": f"{r.district}, {r.province}"}
+                                for r in iwaiting])
 
 
 @router.get("/verify/{nid}")
@@ -344,7 +352,11 @@ def _claim_extras(k):
         note = c.execute(text(
             "SELECT e.note FROM need_events e WHERE e.need_id = :n AND e.event = 'claim_disputed' AND starts_with(e.note, :p) "
             "ORDER BY e.id DESC LIMIT 1"), {"n": k.need_id, "p": f"claim {k.id}: "}).scalar()
-    return {"proof": proof, "dispute": note.split(": ", 1)[1] if note else None}
+    with engine.connect() as c:
+        overdue = c.execute(text("SELECT (status = 'sent' AND sent_at < now() - make_interval(days => :d)) "
+                                 "FROM item_claims WHERE id = :c"), {"c": k.id, "d": int(UNANSWERED_DAYS)}).scalar()
+    return {"proof": proof, "dispute": note.split(": ", 1)[1] if note else None,
+            "overdue": bool(overdue), "wait_days": UNANSWERED_DAYS}
 
 
 @router.post("/verify/claims/{cid}/waive")
@@ -402,3 +414,33 @@ def verify_claim_photo(cid: int, user=Depends(require_role("verifier"))):
     if ref is None:
         raise HTTPException(status_code=404, detail="not found")
     return photo_response(ref)
+
+
+@router.post("/verify/claims/{cid}/chase")
+def verify_claim_chase(request: Request, cid: int, outcome: str = Form(""), reason: str = Form(""), csrf: str = Form(...),
+                       user=Depends(require_role("verifier"))):
+    check_csrf(request, csrf)
+    _expire()
+    k = _claim_for_review(cid)
+    if k is None:
+        raise HTTPException(status_code=404, detail="not found")
+    reason = reason.strip()
+    if outcome not in ("confirm", "dispute"):
+        return _claim_page(request, user, k, 400, error="Choose whether to confirm the handover or open a dispute.")
+    if not 10 <= len(reason) <= 450:
+        return _claim_page(request, user, k, 400, error="Write a reason of 10 to 450 characters.")
+    new = "confirmed" if outcome == "confirm" else "disputed"
+    with engine.begin() as conn:
+        done = conn.execute(text(
+            "UPDATE item_claims SET status = :s WHERE id = :c AND status = 'sent' AND sent_at < now() - make_interval(days => :d) "
+            "RETURNING need_id"), {"s": new, "c": cid, "d": int(UNANSWERED_DAYS)}).one_or_none()
+        if done is None:
+            return _claim_page(request, user, k, 409, error="This offer is not waiting for the requester any more, or it was handed over too recently. Nothing was changed.")
+        if outcome == "confirm":
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_confirmed', :p)"),
+                         {"n": done.need_id, "a": user.id, "p": f"claim {cid}: confirmed by a verifier: {reason}"})
+            conn.execute(text(KEEP_SQL), {"c": cid})
+        else:
+            conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_disputed', :p)"),
+                         {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {reason} (opened by a verifier)"})
+    return RedirectResponse("/verify?done=chased", status_code=303)
