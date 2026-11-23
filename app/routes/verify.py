@@ -9,7 +9,6 @@ from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
 from app.routes.board import _expire
-from app.proofs import KEEP_SQL, photo_response
 from app.validation import public_text_problem
 from app.web import check_csrf, render
 
@@ -346,40 +345,14 @@ def verify_claim_decline(request: Request, cid: int, reason: str = Form(""), csr
 
 def _claim_extras(k):
     with engine.connect() as c:
-        proof = c.execute(text(
-            "SELECT (file_ref IS NOT NULL AND deleted_at IS NULL) AS has_photo, (deleted_at IS NOT NULL) AS gone, waived_reason "
-            "FROM handover_proofs WHERE claim_id = :c"), {"c": k.id}).one_or_none()
         note = c.execute(text(
             "SELECT e.note FROM need_events e WHERE e.need_id = :n AND e.event = 'claim_disputed' AND starts_with(e.note, :p) "
             "ORDER BY e.id DESC LIMIT 1"), {"n": k.need_id, "p": f"claim {k.id}: "}).scalar()
     with engine.connect() as c:
         overdue = c.execute(text("SELECT (status = 'sent' AND sent_at < now() - make_interval(days => :d)) "
                                  "FROM item_claims WHERE id = :c"), {"c": k.id, "d": int(UNANSWERED_DAYS)}).scalar()
-    return {"proof": proof, "dispute": note.split(": ", 1)[1] if note else None,
+    return {"dispute": note.split(": ", 1)[1] if note else None,
             "overdue": bool(overdue), "wait_days": UNANSWERED_DAYS}
-
-
-@router.post("/verify/claims/{cid}/waive")
-def verify_claim_waive(request: Request, cid: int, reason: str = Form(""), csrf: str = Form(...),
-                       user=Depends(require_role("verifier"))):
-    check_csrf(request, csrf)
-    _expire()
-    k = _claim_for_review(cid)
-    if k is None:
-        raise HTTPException(status_code=404, detail="not found")
-    reason = reason.strip()
-    if not 10 <= len(reason) <= 500:
-        return _claim_page(request, user, k, 400, error="Write a reason of 10 to 500 characters.")
-    with engine.begin() as conn:
-        done = conn.execute(text(
-            "INSERT INTO handover_proofs (claim_id, waived_reason) SELECT CAST(:c AS bigint), CAST(:r AS text) "
-            "WHERE EXISTS (SELECT 1 FROM item_claims WHERE id = :c AND status = 'pledged' AND released_at IS NOT NULL) "
-            "ON CONFLICT (claim_id) DO NOTHING RETURNING id"), {"c": cid, "r": reason}).first()
-        if done is None:
-            return _claim_page(request, user, k, 409, error="The photo cannot be waived for this offer now (not released, already handed over, or already waived). Nothing was changed.")
-        conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_photo_waived', :p)"),
-                     {"n": k.need_id, "a": user.id, "p": f"claim {cid}: {reason}"})
-    return RedirectResponse("/verify?done=waived", status_code=303)
 
 
 @router.post("/verify/claims/{cid}/settle")
@@ -403,17 +376,7 @@ def verify_claim_settle(request: Request, cid: int, outcome: str = Form(""), rea
             return _claim_page(request, user, k, 409, error="This offer is not in dispute any more. Nothing was changed.")
         conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_settled', :p)"),
                      {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {outcome}: {reason}"})
-        conn.execute(text(KEEP_SQL), {"c": cid})
     return RedirectResponse("/verify?done=settled", status_code=303)
-
-
-@router.get("/verify/claims/{cid}/photo")
-def verify_claim_photo(cid: int, user=Depends(require_role("verifier"))):
-    with engine.connect() as c:
-        ref = c.execute(text("SELECT file_ref FROM handover_proofs WHERE claim_id = :c AND deleted_at IS NULL"), {"c": cid}).scalar()
-    if ref is None:
-        raise HTTPException(status_code=404, detail="not found")
-    return photo_response(ref)
 
 
 @router.post("/verify/claims/{cid}/chase")
@@ -439,7 +402,6 @@ def verify_claim_chase(request: Request, cid: int, outcome: str = Form(""), reas
         if outcome == "confirm":
             conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_confirmed', :p)"),
                          {"n": done.need_id, "a": user.id, "p": f"claim {cid}: confirmed by a verifier: {reason}"})
-            conn.execute(text(KEEP_SQL), {"c": cid})
         else:
             conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_disputed', :p)"),
                          {"n": done.need_id, "a": user.id, "p": f"claim {cid}: {reason} (opened by a verifier)"})

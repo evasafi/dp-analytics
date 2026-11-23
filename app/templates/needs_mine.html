@@ -59,7 +59,7 @@
         <tr><th>Units</th><th>Status</th><th>Contact the donor</th><th>Handover</th></tr>
         {% for o in r.offers %}
         <tr data-offer="{{ o.id }}"><td>{{ o.units }}</td><td>{{ o.status }}{% if o.expires %}<br>by {{ o.expires }}{% endif %}</td><td>{% if o.contact %}{{ o.contact }}{% endif %}</td>
-          <td>{% if o.has_photo %}<a href="/needs/offers/{{ o.id }}/photo" target="_blank" rel="noopener">View the photo</a>{% elif o.waived %}No photo. A verifier waived it.{% endif %}
+          <td>
           {% if o.can_answer %}
           <form method="post" action="/needs/offers/{{ o.id }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">I received the items</button></form>
           <form method="post" action="/needs/offers/{{ o.id }}/dispute"><input type="hidden" name="csrf" value="{{ csrf }}"><textarea name="reason" rows="2" cols="30" minlength="10" maxlength="450" placeholder="What went wrong? (10 to 450 characters)" required></textarea><button type="submit">I did not receive them</button></form>

@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app import items, proofs
+from app import items
 from app.auth import require_role
 from app.db import engine
 from app.reference import STATUS_TEXT, money, need_label
@@ -322,8 +322,6 @@ def claim_cancel(request: Request, cid: int, csrf: str = Form(...), user=Depends
     return RedirectResponse("/support?done=claim_cancelled", status_code=303)
 
 
-from fastapi import File, UploadFile  # noqa: E402
-
 HANDOVER_STALE = ("This offer cannot be marked as handed over now. It may not be released yet, or it was already handed over, "
                   "cancelled or expired, or the need is closed. Nothing was changed.")
 
@@ -335,11 +333,9 @@ class _Stale(Exception):
 def _handover_state(cid: int, uid: int):
     with engine.connect() as c:
         return c.execute(text(
-            "SELECT k.id, k.units, k.status, k.released_at, n.status AS nstatus, n.province, n.district, t.name AS item_name, "
-            "COALESCE(h.waived_reason IS NOT NULL, false) AS waived "
+            "SELECT k.id, k.units, k.status, k.released_at, n.status AS nstatus, n.province, n.district, t.name AS item_name "
             "FROM item_claims k JOIN needs n ON n.id = k.need_id LEFT JOIN item_types t ON t.id = n.item_type_id "
-            "LEFT JOIN handover_proofs h ON h.claim_id = k.id WHERE k.id = :c AND k.donor_id = :u"),
-            {"c": cid, "u": uid}).one_or_none()
+            "WHERE k.id = :c AND k.donor_id = :u"), {"c": cid, "u": uid}).one_or_none()
 
 
 def _can_hand_over(k) -> bool:
@@ -347,10 +343,7 @@ def _can_hand_over(k) -> bool:
 
 
 def _handover_page(request, user, k, status_code=200, error=None):
-    with engine.connect() as c:
-        days = c.execute(text("SELECT photo_retention_days FROM settings")).scalar_one()
-    return render(request, "item_handover.html", status_code=status_code, user=user, k=k, error=error,
-                  max_mb=proofs.MAX_BYTES // (1024 * 1024), days=days)
+    return render(request, "item_handover.html", status_code=status_code, user=user, k=k, error=error)
 
 
 @router.get("/support/claims/{cid}/handover")
@@ -365,8 +358,7 @@ def handover_page(request: Request, cid: int, user=Depends(require_role("support
 
 
 @router.post("/support/claims/{cid}/handover")
-def handover(request: Request, cid: int, csrf: str = Form(...), photo: UploadFile | None = File(None),
-             user=Depends(require_role("supporter"))):
+def handover(request: Request, cid: int, ack: str = Form(""), csrf: str = Form(...), user=Depends(require_role("supporter"))):
     check_csrf(request, csrf)
     _expire()
     k = _handover_state(cid, user.id)
@@ -374,18 +366,10 @@ def handover(request: Request, cid: int, csrf: str = Form(...), photo: UploadFil
         raise HTTPException(status_code=404, detail="not found")
     if not _can_hand_over(k):
         return _support_page(request, user, 409, error=HANDOVER_STALE)
-    name = None
-    if not k.waived:
-        data = photo.file.read(proofs.MAX_BYTES + 1) if photo is not None else b""
-        try:
-            clean = proofs.clean_image(data)
-        except proofs.ProofError as e:
-            return _handover_page(request, user, k, 400, str(e))
-        name = proofs.save(clean)
+    if not ack:
+        return _handover_page(request, user, k, 400, "Tick the box to confirm that you handed the items over.")
     try:
         with engine.begin() as conn:
-            if name is not None:
-                conn.execute(text("INSERT INTO handover_proofs (claim_id, file_ref) VALUES (:c, :f)"), {"c": cid, "f": name})
             done = conn.execute(
                 text("UPDATE item_claims SET status = 'sent' WHERE id = :c AND donor_id = :u AND status = 'pledged' "
                      "AND released_at IS NOT NULL RETURNING need_id"), {"c": cid, "u": user.id}).one_or_none()
@@ -394,7 +378,5 @@ def handover(request: Request, cid: int, csrf: str = Form(...), photo: UploadFil
             conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_sent', :p)"),
                          {"n": done.need_id, "a": user.id, "p": f"claim {cid}"})
     except (_Stale, DBAPIError):
-        if name is not None:
-            proofs.remove(name)
         return _support_page(request, user, 409, error=HANDOVER_STALE)
     return RedirectResponse("/support?done=claim_sent", status_code=303)

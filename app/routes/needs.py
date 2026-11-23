@@ -7,7 +7,6 @@ from sqlalchemy.exc import DBAPIError
 from app import items
 from app.auth import require_role
 from app.routes.board import _expire
-from app.proofs import KEEP_SQL, photo_response
 from app.db import engine
 from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCES
@@ -176,9 +175,7 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
             "WHERE status IN ('pledged', 'sent', 'confirmed', 'disputed') GROUP BY need_id) p ON p.need_id = n.id "
             "LEFT JOIN item_types t ON t.id = n.item_type_id WHERE n.requester_id = :u ORDER BY n.id DESC"), {"u": user.id}).all()
         offers = c.execute(text(
-            "SELECT k.id, k.need_id, k.units, k.status, k.contact_method, k.contact, k.expires_at, "
-            "(SELECT h.file_ref IS NOT NULL AND h.deleted_at IS NULL FROM handover_proofs h WHERE h.claim_id = k.id) AS has_photo, "
-            "(SELECT h.waived_reason IS NOT NULL FROM handover_proofs h WHERE h.claim_id = k.id) AS waived FROM item_claims k "
+            "SELECT k.id, k.need_id, k.units, k.status, k.contact_method, k.contact, k.expires_at FROM item_claims k "
             "JOIN needs n ON n.id = k.need_id WHERE n.requester_id = :u AND k.released_at IS NOT NULL "
             "AND k.status IN ('pledged', 'sent', 'confirmed', 'disputed') ORDER BY k.id"), {"u": user.id}).all()
     by_need = {}
@@ -187,7 +184,7 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
     for k in offers:
         offers_by_need.setdefault(k.need_id, []).append({
             "id": k.id, "units": k.units, "status": OFFER_TEXT[k.status],
-            "can_answer": k.status == "sent", "has_photo": bool(k.has_photo), "waived": bool(k.waived),
+            "can_answer": k.status == "sent",
             "contact": None if k.status == "confirmed" else f"{CONTACT_LABELS[k.contact_method]}: {k.contact}",
             "expires": k.expires_at.strftime("%Y-%m-%d") if k.status == "pledged" and k.expires_at else None})
     for p in sent:
@@ -319,7 +316,6 @@ def offer_confirm(request: Request, cid: int, csrf: str = Form(...), user=Depend
         if row is not None:
             conn.execute(text("INSERT INTO need_events (need_id, actor_id, event, note) VALUES (:n, :a, 'claim_confirmed', :p)"),
                          {"n": row.need_id, "a": user.id, "p": f"claim {cid}"})
-            conn.execute(text(KEEP_SQL), {"c": cid})
     if row is None:
         return _mine_page(request, user, 409, error="This offer is not waiting for your answer any more. Nothing was changed.")
     return RedirectResponse("/needs/mine", status_code=303)
@@ -343,15 +339,3 @@ def offer_dispute(request: Request, cid: int, reason: str = Form(""), csrf: str 
     if row is None:
         return _mine_page(request, user, 409, error="This offer is not waiting for your answer any more. Nothing was changed.")
     return RedirectResponse("/needs/mine", status_code=303)
-
-
-@router.get("/needs/offers/{cid}/photo")
-def offer_photo(cid: int, user=Depends(require_role("requester"))):
-    with engine.connect() as c:
-        ref = c.execute(text(
-            "SELECT h.file_ref FROM handover_proofs h JOIN item_claims k ON k.id = h.claim_id JOIN needs n ON n.id = k.need_id "
-            "WHERE h.claim_id = :c AND n.requester_id = :u AND h.deleted_at IS NULL AND h.file_ref IS NOT NULL"),
-            {"c": cid, "u": user.id}).scalar()
-    if ref is None:
-        raise HTTPException(status_code=404, detail="not found")
-    return photo_response(ref)

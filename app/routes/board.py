@@ -72,8 +72,6 @@ def _expire():
     with engine.begin() as c:
         c.execute(text("SELECT expire_pledges()"))
         c.execute(text("SELECT expire_item_claims()"))
-        from app.proofs import purge_expired
-        purge_expired(c)
 
 
 def _item_card(r):

@@ -81,7 +81,6 @@ CREATE TABLE settings (
     max_unconfirmed_pledges integer       NOT NULL DEFAULT 10 CHECK (max_unconfirmed_pledges >= 1),
     suggestion_min_needs    integer       NOT NULL DEFAULT 20 CHECK (suggestion_min_needs >= 1),
     claim_expiry_days       integer       NOT NULL DEFAULT 7  CHECK (claim_expiry_days BETWEEN 1 AND 60),
-    photo_retention_days    integer       NOT NULL DEFAULT 30 CHECK (photo_retention_days BETWEEN 1 AND 365),
     eur_try_rate            numeric(10,4) NOT NULL DEFAULT 50 CHECK (eur_try_rate > 0)              -- PLACEHOLDER rate
 );
 INSERT INTO settings DEFAULT VALUES;
@@ -550,19 +549,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- One proof per claim: a stored photo (file_ref names a file kept outside the database) or a
--- verifier's recorded reason for waiving it. Once the file is deleted, deleted_at is set.
-CREATE TABLE handover_proofs (
-    id            bigserial PRIMARY KEY,
-    claim_id      bigint NOT NULL UNIQUE REFERENCES item_claims(id),
-    file_ref      text,
-    waived_reason text CHECK (waived_reason IS NULL OR length(waived_reason) BETWEEN 10 AND 500),
-    uploaded_at   timestamptz NOT NULL DEFAULT now(),
-    delete_after  timestamptz,
-    deleted_at    timestamptz,
-    CONSTRAINT photo_or_waiver CHECK
-        (deleted_at IS NOT NULL OR ((file_ref IS NULL) <> (waived_reason IS NULL)))
-);
 
 -- ---------------------------------------------------------------- synthetic twin
 -- Same columns as the analytics view, so one engine can read either. Assumed data, not real.
@@ -684,14 +670,12 @@ GRANT INSERT ON need_events TO dp_app;
 GRANT USAGE ON SEQUENCE needs_id_seq, pledges_id_seq, need_events_id_seq TO dp_app;
 GRANT EXECUTE ON FUNCTION expire_pledges() TO dp_app;
 GRANT EXECUTE ON FUNCTION expire_item_claims() TO dp_app;
-GRANT SELECT ON item_types, item_claims, handover_proofs TO dp_app;
+GRANT SELECT ON item_types, item_claims TO dp_app;
 GRANT INSERT (need_id, donor_id, units, ack, contact_method, contact) ON item_claims TO dp_app;
 GRANT UPDATE (status, released_at, released_by) ON item_claims TO dp_app;
-GRANT INSERT (claim_id, file_ref, waived_reason, delete_after) ON handover_proofs TO dp_app;
-GRANT UPDATE (file_ref, delete_after, deleted_at) ON handover_proofs TO dp_app;
-GRANT USAGE ON SEQUENCE item_claims_id_seq, handover_proofs_id_seq TO dp_app;
+GRANT USAGE ON SEQUENCE item_claims_id_seq TO dp_app;
 GRANT EXECUTE ON FUNCTION expire_item_claims() TO dp_app;
-REVOKE DELETE, TRUNCATE ON item_claims, handover_proofs FROM dp_app;
+REVOKE DELETE, TRUNCATE ON item_claims FROM dp_app;
 REVOKE DELETE, TRUNCATE ON needs, pledges FROM dp_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON need_events FROM dp_app;
 

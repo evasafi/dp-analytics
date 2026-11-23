@@ -47,7 +47,6 @@ def run(sql, **p):
 def cleanup():
     sub = "(SELECT id FROM needs WHERE requester_id IN (SELECT id FROM users WHERE username LIKE :p))"
     with admin.begin() as c:
-        c.execute(text("DELETE FROM handover_proofs WHERE claim_id IN (SELECT id FROM item_claims WHERE need_id IN " + sub + ")"), {"p": PREFIX + "%"})
         c.execute(text("DELETE FROM item_claims WHERE need_id IN " + sub), {"p": PREFIX + "%"})
         c.execute(text("DELETE FROM need_events WHERE need_id IN " + sub), {"p": PREFIX + "%"})
         c.execute(text("DELETE FROM needs WHERE requester_id IN (SELECT id FROM users WHERE username LIKE :p)"), {"p": PREFIX + "%"})

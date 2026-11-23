@@ -61,7 +61,6 @@ CLAIMS = "SELECT id FROM item_claims WHERE need_id IN (" + NEEDS + ")"
 
 def cleanup():
     with owner.begin() as c:
-        c.execute(text("DELETE FROM handover_proofs WHERE claim_id IN (" + CLAIMS + ")"))
         c.execute(text("DELETE FROM item_claims WHERE need_id IN (" + NEEDS + ")"))
         c.execute(text("DELETE FROM need_events WHERE need_id IN (" + NEEDS + ")"))
         c.execute(text("DELETE FROM pledges WHERE need_id IN (" + NEEDS + ")"))
@@ -104,8 +103,8 @@ try:
         return v
 
     print("-- settings and item types")
-    s = row(owner, "SELECT claim_expiry_days, photo_retention_days FROM settings")
-    check("claim expiry 7 days, photo retention 30 days", (s[0], s[1]) == (7, 30), str(tuple(s)))
+    s = row(owner, "SELECT claim_expiry_days FROM settings")
+    check("claim expiry 7 days", s[0] == 7, str(tuple(s)))
     check("walker is enabled",
           run(owner, "SELECT enabled FROM item_types WHERE name = 'Walker'") is True)
     check("electric wheelchair is disabled",
@@ -163,19 +162,6 @@ try:
         must_ok("claim " + str(c) + " moves to sent after release", owner,
                 "UPDATE item_claims SET status = 'sent' WHERE id = :c", {"c": c})
 
-    print("-- proofs")
-    must_ok("a proof with a file", owner, "INSERT INTO handover_proofs (claim_id, file_ref) VALUES (:c, 'abc.jpg') RETURNING id", {"c": c1})
-    must_fail("a second proof for the same claim is refused", owner,
-              "INSERT INTO handover_proofs (claim_id, file_ref) VALUES (:c, 'def.jpg')", {"c": c1}, "claim_id")
-    must_fail("a proof with neither file nor waiver is refused", owner,
-              "INSERT INTO handover_proofs (claim_id) VALUES (:c)", {"c": c2}, "photo_or_waiver")
-    must_fail("a proof with both file and waiver is refused", owner,
-              "INSERT INTO handover_proofs (claim_id, file_ref, waived_reason) VALUES (:c, 'x.jpg', 'because of a reason')",
-              {"c": c2}, "photo_or_waiver")
-    must_fail("a waiver reason that is too short is refused", owner,
-              "INSERT INTO handover_proofs (claim_id, waived_reason) VALUES (:c, 'short')", {"c": c2}, "waived_reason")
-    must_ok("a waiver with a reason", owner,
-            "INSERT INTO handover_proofs (claim_id, waived_reason) VALUES (:c, 'requester has no phone camera') RETURNING id", {"c": c2})
 
     print("-- confirming and fulfilling")
     run(owner, "UPDATE item_claims SET status = 'confirmed' WHERE id = :c", {"c": c1})
