@@ -16,6 +16,18 @@ The design, the threat model, the limits and the tested-versus-argued evidence a
 
 No money moves through the platform. It cannot see bank transfers, so it records claims, not payments.
 
+## In-kind help (items)
+
+A requester can ask for an item instead of money (a walker, a heater, bedding). The flag `ITEM_NEEDS_OPEN` in `app/items.py` switches item posting on or off.
+
+1. The requester picks a type from a fixed catalogue, a quantity (up to 50), whether used items are acceptable, a handover method and a place, and writes a private specification and description. A verifier reviews it and writes the public text, as for money needs.
+2. A donor offers some units and gives a contact. A verifier releases the donor's contact to the requester, or declines the offer with a reason. An offer that stays pledged expires after a number of days.
+3. The two hand the items over in person. The donor ticks that they did, the requester confirms receipt or disputes with a reason, and a verifier settles disputes.
+4. When confirmed units reach the quantity, the need is fulfilled.
+
+The platform never holds goods and keeps no photo or other proof of a handover. It records what each side says, so a dispute rests on two statements and a verifier's judgement (`THREAT_MODEL.md`, section 2.7).
+
+
 ## Status
 
 Built, and covered by script tests (counts are in `THREAT_MODEL.md`, section 5):
@@ -27,25 +39,28 @@ Built, and covered by script tests (counts are in `THREAT_MODEL.md`, section 5):
 - Partial pledges, a suggested amount, marking a pledge as sent, cancelling, and expiry of unsent pledges.
 - Receipts and disputes: the requester confirms or disputes a sent pledge, and a verifier settles disputes.
 - Withdrawing a need with a reason that gets the same text guard as the public text.
-- Differentially private counts over two datasets (synthetic and live demo needs), with five fixed groupings, a free preview, stored results and CSV download.
+- In-kind help: item needs, offers of units, release or decline by a verifier, a handover statement, confirmation or dispute by the requester, settling by a verifier, and a verifier nudge for unanswered handovers.
+- Item figures on the front page (fulfilled item needs, confirmed units, item donors).
+- Differentially private counts over two datasets (synthetic and live demo needs), with five fixed groupings (and three more for items on the live dataset), a free preview, stored results and CSV download.
 - A privacy budget that is spent atomically and cannot be refunded by the app, and an append-only audit log.
 
-Checked in a browser, not by a test: the analyst and admin pages, and the requester's "My needs" page. The board, the pledge pages, the verifier pages and the analytics result pages have script tests but have not been looked at in a browser on this version. The interface has not been restyled.
+Checked in a browser, not by a test: the analyst and admin pages, and the requester's "My needs" page. The board, the pledge pages, the verifier pages and the analytics result pages have script tests but have not been looked at in a browser on this version. The interface has not been restyled. The item pages and the item groupings have script tests; no browser check is recorded here.
 
 Not built:
 
 - Notifications, a clock for pledge expiry (it runs when pages load), email or phone verification, password reset, and a page for the event log.
 - Field-level encryption, hash-chained audit logs, per-user budget caps, a Turkish translation.
-- A check of the legal rules for collecting aid in Turkey. This is the biggest open question.
+- A check of the legal rules for collecting aid in Turkey. This is the biggest open question. The rules for giving used items, especially used medical equipment, have not been checked either.
+- Photo proof of an item handover. It was built and then removed on purpose (`THREAT_MODEL.md`, section 2.7).
 
 ## Roles
 
 | Role | How it is created | What it can do |
 |---|---|---|
 | Visitor | no account | Browse the board, a need's page and the map |
-| Requester | open sign-up | Post needs, see their status and funding, withdraw a need, confirm or dispute pledges marked sent |
-| Supporter | open sign-up | Pledge, see their pledges and the account to pay into, mark as sent, cancel |
-| Verifier | `seed_verifier.py` | Review and approve or reject needs, see private details and contacts, settle disputes |
+| Requester | open sign-up | Post needs, see their status and funding, withdraw a need, confirm or dispute pledges marked sent, ask for items, confirm or dispute item handovers |
+| Supporter | open sign-up | Pledge, see their pledges and the account to pay into, mark as sent, cancel, offer units of an item and mark them handed over |
+| Verifier | `seed_verifier.py` | Review and approve or reject needs, see private details and contacts, settle disputes, release or decline item offers |
 | Analyst | `seed_users.py` | Run private counts |
 | Admin | `seed_users.py` | See the audit log and the budgets, never results or needs |
 
@@ -83,7 +98,7 @@ To regenerate the two Python lists, run these from the project root, in this ord
 The scripts in `dev/` are run from the project root as modules, for example `python -m dev.test_board`. Each asks for the database owner's password with hidden input, refuses to run on a database without this schema, and creates and removes its own throwaway accounts. They never touch real accounts or the real budgets. Do not run them against a database that holds real data. To run the main ones in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }
@@ -93,9 +108,9 @@ foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_v
 
 ## Queries (analytics)
 
-Analysts use `/analyst`. They pick a dataset (`needs_synthetic` or `needs_live`) and one of five groupings: need type, province, status, need type by status, or goal band. A preview shows the cost and the typical error before anything is charged. A run costs 0.1 whatever the number of cells, and each dataset has a budget of 10.0. Results are stored, so reopening one or downloading its CSV is free.
+Analysts use `/analyst`. They pick a dataset (`needs_synthetic` or `needs_live`) and one of five groupings: need type, province, status, need type by status, or goal band. On the live dataset there are three more: kind (money or item), item category, and item category by status. A preview shows the cost and the typical error before anything is charged. A run costs 0.1 whatever the number of cells, and each dataset has a budget of 10.0. Results are stored, so reopening one or downloading its CSV is free.
 
-Each requester counts for at most their first 3 needs, so one person changes any table by at most 3 and the noise is sized for that: a typical error of about 30 per cell. Cells whose noisy count is below 30 are shown as suppressed, but shown values can still be noise. The synthetic dataset's distributions are assumptions, and `needs_live` holds demo data.
+Each requester counts for at most their first 3 needs, so one person changes any table by at most 3 and the noise is sized for that: a typical error of about 30 per cell. Cells whose noisy count is below 30 are shown as suppressed, but shown values can still be noise. The synthetic dataset's distributions are assumptions, and `needs_live` holds demo data. Province and status counts include item needs, need type and goal band count money needs only, and the 3-need cap covers both kinds together.
 
 `app/noise.py`, `app/engine.py` and `app/engine_noise.py` are code from the earlier engine. The analytics still use a few of their parts (the noise function, the grouping description and the cell limit).
 

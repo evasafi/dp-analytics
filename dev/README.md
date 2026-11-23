@@ -23,11 +23,15 @@ Every test below that touches the database asks for the database owner's passwor
 | `test_stats.py` | The front-page stats view and its line on the board |
 | `test_withdrawal_reason.py` | The text guard on a withdrawal reason |
 | `test_analytics_engine.py`, `test_analytics_routes.py` | The private counts and the analyst pages |
+| `test_item_schema.py` | Item needs and offers in the database: constraints, triggers, views, grants |
+| `test_item_posting.py`, `test_item_verify.py`, `test_item_board.py` | Posting an item need, the verifier's review of it, and its board and need pages |
+| `test_item_claims.py`, `test_item_handover.py`, `test_item_chase.py` | Offering units, release and decline, handover, confirming and disputing, settling, and the verifier nudge |
+| `test_item_stats.py`, `test_item_analytics.py` | The front-page item figures and the item groupings in the analytics |
 
 To run them in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }
