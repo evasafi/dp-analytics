@@ -18,7 +18,7 @@ No money moves through the platform. It cannot see bank transfers, so it records
 
 ## In-kind help (items)
 
-A requester can ask for an item instead of money (a walker, a heater, bedding). The flag `ITEM_NEEDS_OPEN` in `app/items.py` switches item posting on or off.
+A requester can ask for an item instead of money (a walker, a heater, bedding). Item posting is open. The flag `ITEM_NEEDS_OPEN` in `app/items.py` closes or reopens it.
 
 1. The requester picks a type from a fixed catalogue, a quantity (up to 50), whether used items are acceptable, a handover method and a place, and writes a private specification and description. A verifier reviews it and writes the public text, as for money needs.
 2. A donor offers some units and gives a contact. A verifier releases the donor's contact to the requester, or declines the offer with a reason. An offer that stays pledged expires after a number of days.

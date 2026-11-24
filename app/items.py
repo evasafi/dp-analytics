@@ -7,9 +7,9 @@ from app.districts import DISTRICTS_BY_PROVINCE
 from app.provinces import PROVINCE_NAMES
 from app.validation import contact_problem
 
-# Off until the verifier and board sides handle item needs. A pending item need would otherwise
-# appear in pages that assume every need has a purpose and a goal.
-ITEM_NEEDS_OPEN = False
+# Item posting switch. True shows the item option on the post form and accepts item needs; False closes
+# the form again. Item needs that already exist keep working either way.
+ITEM_NEEDS_OPEN = True
 
 MAX_QUANTITY = 50
 MAX_SPECIFICATION = 300

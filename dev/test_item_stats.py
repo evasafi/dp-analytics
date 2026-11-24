@@ -92,7 +92,14 @@ try:
     anon = TestClient(app, base_url=BASE)
     page0 = anon.get("/board").text
     check("the existing money sentence is still there", 'id="stats"' in page0 and "confirmed by requesters" in page0)
-    if not items.ITEM_NEEDS_OPEN and not (before.fulfilled_items or before.confirmed_units or before.claimants):
+    original_flag = items.ITEM_NEEDS_OPEN
+    if not (before.fulfilled_items or before.confirmed_units or before.claimants):
+        items.ITEM_NEEDS_OPEN = False
+        page0 = anon.get("/board").text
+        items.ITEM_NEEDS_OPEN = True
+        on_page = anon.get("/board").text
+        items.ITEM_NEEDS_OPEN = original_flag
+        check("with item posting open, the board shows the item line even before any activity", 'id="item-stats"' in on_page)
         check("with item posting off and no item activity, the board shows no item line", 'id="item-stats"' not in page0)
     VER = make_user("its_ver", "verifier")
     req = make_user("its_req", "requester")

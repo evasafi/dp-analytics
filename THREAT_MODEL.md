@@ -201,7 +201,7 @@ In-kind help
 - Used items, above all used medical and mobility equipment, are not checked for safety. The legal rules for giving them have not been checked, and the legal caveat above applies to items as well. A medical detail in an item need would also fall under the data protection law (KVKK), which has not been assessed.
 - Nothing tells either side when an offer is made, released or handed over. They find out by opening their pages.
 - The front-page item totals are exact, not noised or suppressed.
-- The flag `ITEM_NEEDS_OPEN` switches item posting; the item flow has script tests only (section 5), with no browser check recorded here.
+- Item posting is open (`ITEM_NEEDS_OPEN` is True in `app/items.py`; setting it to False closes the form). The item flow has script tests only (section 5), with no browser check recorded here, and the legal questions above are open.
 
 Data at rest and operations
 - Private data is stored in plain text and readable by the database owner (section 2.3). Backups and key management are out of scope.
@@ -261,7 +261,7 @@ Tested (a script in the repo shows it):
 | Offering units, release and decline | `dev/test_item_claims.py` (36 checks): the offer form, who may offer, release or decline by a verifier, cancelling, and what each side can see |
 | Handover, confirmation and disputes | `dev/test_item_handover.py` (28 checks): the donor's statement, the requester confirming or disputing, a verifier settling, and the photo and waiver routes no longer existing |
 | The verifier nudge | `dev/test_item_chase.py` (12 checks): handed-over offers the requester has not answered are listed, and a verifier can confirm for the requester or open a dispute |
-| Front-page item figures | `dev/test_item_stats.py` (11 checks): offered and handed-over units change nothing, confirmed ones add units and donors, a donor counts once, cancelled offers change nothing, the money figures do not move, and the board shows the item line |
+| Front-page item figures | `dev/test_item_stats.py` (12 checks): offered and handed-over units change nothing, confirmed ones add units and donors, a donor counts once, cancelled offers change nothing, the money figures do not move, and the board shows the item line |
 | Item needs in the analytics | `dev/test_item_analytics.py` (18 checks): kind and item category groupings work on the live dataset only, fixed cell counts, the cap of 3 across a person's needs, province and status include item needs while need type and goal band do not, and the app role reads the new columns |
 | Noise is statistically consistent with epsilon | `dev/test_dp_statistical.py` and `dev/test_engine_dp.py`, rerun on this branch on 4 November 2026. Counts at sensitivity 1: worst excess 2.4 standard errors; sums at sensitivity 500: 3.1; one added person in a grouped cell: 2.6; the unchanged cell: 0.1. The threshold is 4. Three mis-calibrated controls were flagged at 64, 100 and 46. Noise correlation between cells was 0.0030 against a limit of 0.0089. These test the shared noise function, not the needs engine's sensitivity of 3, which the engine test checks more coarsely (the scale within 10 percent). They cannot detect floating-point leaks or test composition |
 
