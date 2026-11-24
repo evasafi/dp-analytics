@@ -691,3 +691,49 @@ REVOKE UPDATE, DELETE, TRUNCATE ON needs_synth FROM dp_app;
 
 -- One privacy budget per analytics dataset
 INSERT INTO datasets (name, epsilon_total) VALUES ('needs_synthetic', 10.0), ('needs_live', 10.0);
+
+-- ---------------------------------------------------------------- pledge reference code
+-- Every money pledge gets a random code the donor puts in the transfer description, so the
+-- requester can match a bank line to a pledge. The database sets it; the app role cannot
+-- insert or change it. It is a matching aid, not proof of payment.
+-- BEGIN ref code
+ALTER TABLE pledges ADD COLUMN ref_code text;
+
+CREATE FUNCTION new_ref_code() RETURNS text AS $$
+DECLARE
+    alphabet text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    raw text;
+    code text;
+    i integer;
+BEGIN
+    LOOP
+        raw := '';
+        FOR i IN 1..8 LOOP
+            raw := raw || substr(alphabet, 1 + floor(random() * length(alphabet))::integer, 1);
+        END LOOP;
+        code := 'AB-' || substr(raw, 1, 4) || '-' || substr(raw, 5, 4);
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM pledges WHERE ref_code = code);
+    END LOOP;
+    RETURN code;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE FUNCTION set_pledge_ref() RETURNS trigger AS $$
+BEGIN
+    NEW.ref_code := new_ref_code();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER pledges_ref_code BEFORE INSERT ON pledges
+    FOR EACH ROW EXECUTE FUNCTION set_pledge_ref();
+
+ALTER TABLE pledges DISABLE TRIGGER pledges_status_flow;
+ALTER TABLE pledges DISABLE TRIGGER pledges_fulfil;
+UPDATE pledges SET ref_code = new_ref_code() WHERE ref_code IS NULL;
+ALTER TABLE pledges ENABLE TRIGGER pledges_status_flow;
+ALTER TABLE pledges ENABLE TRIGGER pledges_fulfil;
+
+ALTER TABLE pledges ALTER COLUMN ref_code SET NOT NULL;
+ALTER TABLE pledges ADD CONSTRAINT pledges_ref_code_key UNIQUE (ref_code);
+-- END ref code

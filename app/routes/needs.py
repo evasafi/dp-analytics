@@ -156,7 +156,7 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
     _expire()
     with engine.connect() as c:
         sent = c.execute(text(
-            "SELECT p.id, p.need_id, p.status, p.amount_try, p.amount_need, p.sent_at, n.currency FROM pledges p "
+            "SELECT p.id, p.need_id, p.status, p.amount_try, p.amount_need, p.sent_at, p.ref_code, n.currency FROM pledges p "
             "JOIN needs n ON n.id = p.need_id WHERE n.requester_id = :u AND p.status IN ('sent', 'disputed', 'confirmed', 'cancelled') "
             "ORDER BY p.id"), {"u": user.id}).all()
         settled = c.execute(text(
@@ -191,7 +191,7 @@ def _mine_page(request, user, status_code=200, done=False, withdrawn=False, rece
         if p.status == "cancelled" and p.id not in outcome:
             continue
         by_need.setdefault(p.need_id, []).append({
-            "id": p.id, "sent": p.sent_at.strftime("%Y-%m-%d"), "status": OUTCOME_TEXT.get(outcome.get(p.id)) or RECEIPT_TEXT[p.status], "open": p.status == "sent",
+            "id": p.id, "code": p.ref_code, "sent": p.sent_at.strftime("%Y-%m-%d"), "status": OUTCOME_TEXT.get(outcome.get(p.id)) or RECEIPT_TEXT[p.status], "open": p.status == "sent",
             "amount": money(p.amount_try, "TRY") + (f" (about {money(p.amount_need, 'EUR')})" if p.currency == "EUR" else "")})
     shown = []
     for r in rows:

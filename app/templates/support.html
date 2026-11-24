@@ -2,7 +2,7 @@
 {% block title %}My pledges{% endblock %}
 {% block content %}
   <p>Signed in as <strong>{{ user.username }}</strong> (supporter). <a href="/board">Find a need on the board</a></p>
-  {% if done == "pledged" %}<p><strong>Thank you. Send the money to the account shown below, then mark the pledge as sent.</strong></p>{% endif %}
+  {% if done == "pledged" %}<p><strong>Thank you. Send the money to the account shown below, then mark the pledge as sent. Put the reference code shown with the account in the transfer description, so the requester can match your transfer.</strong></p>{% endif %}
   {% if done == "sent" %}<p><strong>Marked as sent. The requester will confirm when it arrives.</strong></p>{% endif %}
   {% if done == "cancelled" %}<p><strong>Your pledge was cancelled and the amount is open again.</strong></p>{% endif %}
   {% if done == "claimed" %}<p><strong>Thank you. A verifier will pass your contact to the requester, who will get in touch. Agree the handover with them.</strong></p>{% endif %}
@@ -18,6 +18,7 @@
       <td style="white-space: nowrap">{{ r.created }}</td><td><a href="/board/{{ r.nid }}">{{ r.label }}</a></td><td>{{ r.place }}</td><td>{{ r.amount }}</td>
       <td>{{ r.status }}{% if r.expires %}<br>by {{ r.expires }}{% endif %}{% if r.need_status %}<br><em>Need: {{ r.need_status }}</em>{% endif %}{% if r.withdrawn_reason %}<br><em>The requester withdrew this need: {{ r.withdrawn_reason }}</em>{% endif %}</td>
       <td>{% if r.iban %}{{ r.payee }}<br><code style="white-space: nowrap">{{ r.iban }}</code>{% endif %}
+        {% if r.code %}<br>Reference code: <strong><code style="white-space: nowrap">{{ r.code }}</code></strong><br><span class="note">Put this in the transfer description.</span>{% endif %}
         {% if r.pledged %}
         <form method="post" action="/support/{{ r.id }}/sent"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">I have sent it</button></form>
         <form method="post" action="/support/{{ r.id }}/cancel"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Cancel</button></form>

@@ -6,6 +6,7 @@
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <table>
     <tr><th>Amount</th><td>{{ amount }}</td></tr>
+    <tr><th>Reference code</th><td><code>{{ p.ref_code }}</code></td></tr>
     <tr><th>Pledged</th><td>{{ p.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
     <tr><th>Marked as sent</th><td>{{ p.sent_at.strftime("%Y-%m-%d %H:%M") if p.sent_at else "not yet" }}</td></tr>
     <tr><th>Pledge status</th><td>{{ p.status }}</td></tr>

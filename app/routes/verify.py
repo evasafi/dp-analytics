@@ -219,7 +219,7 @@ def verify_reject(request: Request, nid: int, note: str = Form(""), csrf: str = 
 def _pledge_page(request, user, pid: int, status_code=200, error=None, note=""):
     with engine.connect() as c:
         p = c.execute(text(
-            "SELECT p.id, p.status, p.amount_try, p.amount_need, p.created_at, p.sent_at, p.contact_method AS d_method, "
+            "SELECT p.id, p.status, p.amount_try, p.amount_need, p.ref_code, p.created_at, p.sent_at, p.contact_method AS d_method, "
             "p.contact AS d_contact, d.username AS donor, n.id AS nid, n.purpose, n.medical_location, n.province, n.district, "
             "n.currency, n.status AS nstatus, n.contact_method AS r_method, n.contact AS r_contact, r.username AS requester, "
             "n.payee_name, n.payee_details FROM pledges p JOIN needs n ON n.id = p.need_id "

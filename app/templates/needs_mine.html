@@ -35,9 +35,9 @@
     <tr><td></td><td colspan="5">
       {% if r.pledges|selectattr('open')|list %}<strong>Money donors say they sent</strong>. Check your account, then say whether it arrived.{% else %}<strong>Money donors sent</strong>. All of it has been answered.{% endif %}
       <table>
-        <tr><th>Sent on</th><th>Amount</th><th>Status</th><th></th></tr>
+        <tr><th>Sent on</th><th>Amount</th><th>Reference</th><th>Status</th><th></th></tr>
         {% for p in r.pledges %}
-        <tr data-pledge="{{ p.id }}"><td style="white-space: nowrap">{{ p.sent }}</td><td>{{ p.amount }}</td><td>{{ p.status }}</td>
+        <tr data-pledge="{{ p.id }}"><td style="white-space: nowrap">{{ p.sent }}</td><td>{{ p.amount }}</td><td><code style="white-space: nowrap">{{ p.code }}</code></td><td>{{ p.status }}</td>
           <td>{% if p.open %}
             <form method="post" action="/needs/pledges/{{ p.id }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">It arrived</button></form>
             <details{% if open_pid == p.id %} open{% endif %}><summary>It did not arrive</summary>
