@@ -885,3 +885,65 @@ CREATE TRIGGER need_events_notify AFTER INSERT ON need_events
     FOR EACH ROW WHEN (NEW.event = 'claim_declined')
     EXECUTE FUNCTION notify_claim_declined();
 -- END decline notice
+
+-- ---------------------------------------------------------------- account deletion
+-- Deleting an account anonymizes it in place. The rows other people's records and the statistics depend on
+-- stay (needs, pledges, offers, events), but everything private is overwritten and the login stops working.
+-- The app role cannot update users; it can only call these two functions. account_blockers lists what must be
+-- finished first, and delete_account refuses on the same list, so the page and the rule cannot drift apart.
+-- BEGIN account deletion
+ALTER TABLE users ADD COLUMN deleted_at timestamptz;
+
+CREATE FUNCTION account_blockers(uid bigint) RETURNS TABLE (blocker text, cnt bigint) AS $$
+    SELECT 'pending_needs', count(*) FROM needs WHERE requester_id = uid AND status = 'pending'
+    UNION ALL
+    SELECT 'published_needs', count(*) FROM needs WHERE requester_id = uid AND status = 'published'
+    UNION ALL
+    SELECT 'unanswered_pledges_on_mine', count(*) FROM pledges p JOIN needs n ON n.id = p.need_id
+        WHERE n.requester_id = uid AND p.status IN ('pledged', 'sent', 'disputed')
+    UNION ALL
+    SELECT 'unanswered_offers_on_mine', count(*) FROM item_claims k JOIN needs n ON n.id = k.need_id
+        WHERE n.requester_id = uid AND k.status IN ('pledged', 'sent', 'disputed')
+    UNION ALL
+    SELECT 'my_open_pledges', count(*) FROM pledges WHERE supporter_id = uid AND status IN ('pledged', 'sent', 'disputed')
+    UNION ALL
+    SELECT 'my_open_offers', count(*) FROM item_claims WHERE donor_id = uid AND status IN ('pledged', 'sent', 'disputed');
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE FUNCTION delete_account(uid bigint) RETURNS boolean AS $$
+DECLARE
+    u users%ROWTYPE;
+BEGIN
+    SELECT * INTO u FROM users WHERE id = uid FOR UPDATE;
+    IF NOT FOUND OR u.deleted_at IS NOT NULL OR u.role NOT IN ('requester', 'supporter') THEN
+        RETURN false;
+    END IF;
+    IF EXISTS (SELECT 1 FROM account_blockers(uid) WHERE cnt > 0) THEN
+        RETURN false;
+    END IF;
+    UPDATE needs SET
+        description = 'Removed with the account.',
+        contact = 'removed',
+        payee_name = CASE WHEN payee_name IS NULL THEN NULL ELSE 'Removed' END,
+        payee_details = CASE WHEN payee_details IS NULL THEN NULL ELSE 'removed' END,
+        public_text = CASE WHEN public_text IS NULL THEN NULL ELSE 'This request is closed.' END,
+        withdrawn_reason = CASE WHEN withdrawn_reason IS NULL THEN NULL ELSE 'Removed with the account.' END,
+        review_note = NULL,
+        specification = NULL
+    WHERE requester_id = uid;
+    UPDATE pledges SET contact = NULL WHERE supporter_id = uid;
+    UPDATE item_claims SET contact = 'removed' WHERE donor_id = uid;
+    UPDATE need_events SET note = CASE
+        WHEN note ~ '^(pledge|claim) [0-9]+: ' THEN regexp_replace(note, '^((pledge|claim) [0-9]+): .*$', '\1: removed')
+        WHEN note ~ '^(pledge|claim) [0-9]+$' THEN note
+        ELSE NULL END
+        WHERE actor_id = uid AND note IS NOT NULL;
+    DELETE FROM notifications WHERE user_id = uid;
+    UPDATE users SET username = 'deleted user #' || uid, password_hash = '!', deleted_at = now() WHERE id = uid;
+    RETURN true;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE EXECUTE ON FUNCTION account_blockers(bigint), delete_account(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION account_blockers(bigint), delete_account(bigint) TO dp_app;
+-- END account deletion

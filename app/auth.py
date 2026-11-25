@@ -53,7 +53,7 @@ def current_user(request: Request):
         raise HTTPException(status_code=401, detail="invalid or expired session")
     with engine.connect() as c:
         row = c.execute(
-            text("SELECT id, username, role FROM users WHERE id = :i"),
+            text("SELECT id, username, role FROM users WHERE id = :i AND deleted_at IS NULL"),
             {"i": data["uid"]},
         ).one_or_none()
     if row is None:

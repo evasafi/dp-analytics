@@ -238,6 +238,9 @@ app.include_router(analytics_routes.router)
 from app.routes import notifications as notifications_routes
 
 app.include_router(notifications_routes.router)
+from app.routes import account as account_routes
+
+app.include_router(account_routes.router)
 
 
 # ---------------- friendly error pages for browsers ----------------

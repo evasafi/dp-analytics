@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Delete my account{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> ({{ user.role }}). <a href="/">Back to my page</a></p>
+  <h3>Delete my account</h3>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <p><strong>What happens.</strong> Your username is replaced and your password stops working. Everything private you
+  wrote is removed: request descriptions, contact details, the account holder name and IBAN, public text, withdrawal
+  reasons, and what you wrote in disputes. Your notifications are deleted.</p>
+  <p><strong>What stays.</strong> The requests, pledges and offers themselves stay, without your name or contact: amounts,
+  places and dates. Other people's records and the platform's statistics depend on them. This is anonymizing your
+  account, not erasing every trace that something happened.</p>
+  <p><strong>It cannot be undone.</strong> You could register again later, but nothing would be linked to your old account.</p>
+  {% if blockers %}
+  <p><strong>Finish these first.</strong> An account cannot be deleted while something is still open.</p>
+  <table>
+    <tr><th>Still open</th><th>How many</th><th></th></tr>
+    {% for b in blockers %}
+    <tr><td>{{ b.label }}</td><td>{{ b.count }}</td><td><a href="{{ b.link }}">Open</a></td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <form method="post" action="/account/delete">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p><label>Your password <input type="password" name="password" autocomplete="current-password" required></label></p>
+    <p><label><input type="checkbox" name="confirm"> I understand this cannot be undone.</label></p>
+    <p><button type="submit">Delete my account</button></p>
+  </form>
+  {% endif %}
+{% endblock %}
