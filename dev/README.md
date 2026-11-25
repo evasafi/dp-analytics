@@ -27,11 +27,14 @@ Every test below that touches the database asks for the database owner's passwor
 | `test_item_posting.py`, `test_item_verify.py`, `test_item_board.py` | Posting an item need, the verifier's review of it, and its board and need pages |
 | `test_item_claims.py`, `test_item_handover.py`, `test_item_chase.py` | Offering units, release and decline, handover, confirming and disputing, settling, and the verifier nudge |
 | `test_item_stats.py`, `test_item_analytics.py` | The front-page item figures and the item groupings in the analytics |
+| `test_pledge_code.py` | The transfer reference code on money pledges: format, who sees it and when, grants, backfill |
+| `test_notifications.py` | The in-app notices written by triggers, who gets which, the banner, the history page, the grants |
+| `test_account_delete.py` | Account deletion: the blocker list, the password check, the anonymizing, the rows that stay |
 
 To run them in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics","test_pledge_code","test_notifications","test_account_delete","test_approve_link","test_signin_polish","test_empty_hint") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }

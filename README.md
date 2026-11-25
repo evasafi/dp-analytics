@@ -9,8 +9,8 @@ The design, the threat model, the limits and the tested-versus-argued evidence a
 1. A requester posts a need: a purpose, a place, household size, a goal, a private description, a contact, and the account holder's name and IBAN. It starts as pending and is private.
 2. A verifier reviews it. Outside the platform the verifier checks that the account holder's name matches the requester's identity and that a supporting document exists. Approval needs both checks ticked and a public text written by the verifier. A rejection carries a reason the requester sees.
 3. Approved needs appear on a public board and a province map, with a progress bar of confirmed and promised money. Anyone can browse it without an account.
-4. A supporter pledges any amount from 10 lira up to what is still open. After pledging, the supporter sees the account holder and IBAN, sends the money directly, and marks the pledge as sent.
-5. The requester says whether it arrived. If it did not, a verifier settles it from both sides' statements. When less than one minimum pledge is left open, the need is fulfilled.
+4. A supporter pledges any amount from 10 lira up to what is still open. After pledging, the supporter sees the account holder, the IBAN and a reference code to put in the transfer description, sends the money directly, and marks the pledge as sent.
+5. The requester says whether it arrived, matching each pledge to their bank statement by its reference code. If it did not, a verifier settles it from both sides' statements. When less than one minimum pledge is left open, the need is fulfilled.
 6. A requester can withdraw a need with a reason that donors who pledged will read. The platform refunds nothing.
 7. Analysts run differentially private counts over the needs. Every query is charged against a privacy budget and logged.
 
@@ -28,6 +28,14 @@ A requester can ask for an item instead of money (a walker, a heater, bedding). 
 The platform never holds goods and keeps no photo or other proof of a handover. It records what each side says, so a dispute rests on two statements and a verifier's judgement (`THREAT_MODEL.md`, section 2.7).
 
 
+## Reference codes, notifications and account deletion
+
+Each money pledge gets a random reference code (for example AB-K7MQ-4RXT). The donor puts it in the transfer description. The requester sees it beside pledges marked sent, so a bank statement line can be matched to a pledge without knowing who the donor is. It is a matching aid, not proof of payment: the platform cannot see transfers, and a donor can leave it out.
+
+Signed-in people see short notices at the top of every page when something changes (a pledge made, marked sent, confirmed, disputed or settled, an item offer released, a need approved, and so on). They are written by the database, use fixed text without names or contacts, and are listed, and marked read, at `/notifications`. They exist only inside the application: there is no email or push message.
+
+A requester or supporter can delete their account at `/account/delete`. It asks for the password and is refused while anything is still open (a pending or public request, an unanswered pledge or offer, or their own open pledge or offer). Deleting anonymizes the account in place and overwrites what is private, but keeps the records other people and the statistics depend on (`THREAT_MODEL.md`, section 2.8).
+
 ## Status
 
 Built, and covered by script tests (counts are in `THREAT_MODEL.md`, section 5):
@@ -43,12 +51,15 @@ Built, and covered by script tests (counts are in `THREAT_MODEL.md`, section 5):
 - Item figures on the front page (fulfilled item needs, confirmed units, item donors).
 - Differentially private counts over two datasets (synthetic and live demo needs), with five fixed groupings (and three more for items on the live dataset), a free preview, stored results and CSV download.
 - A privacy budget that is spent atomically and cannot be refunded by the app, and an append-only audit log.
+- A reference code on every money pledge, shown to the donor, the requester (once sent) and the verifier.
+- In-app notifications written by database triggers, with a banner on signed-in pages and a history page.
+- Account deletion for requesters and supporters, by anonymizing in place, refused while anything is open.
 
-Checked in a browser, not by a test: the analyst and admin pages, and the requester's "My needs" page. The board, the pledge pages, the verifier pages and the analytics result pages have script tests but have not been looked at in a browser on this version. The interface has not been restyled. The item pages and the item groupings have script tests; no browser check is recorded here.
+Checked in a browser, not by a test: the analyst and admin pages, and the requester's "My needs" page. The board, the pledge pages, the verifier pages and the analytics result pages have script tests but have not been looked at in a browser on this version. The interface has not been restyled. The item pages and the item groupings have script tests; no browser check is recorded here. The notification banner, the reference code and the account deletion page also have script tests only.
 
 Not built:
 
-- Notifications, a clock for pledge expiry (it runs when pages load), email or phone verification, password reset, and a page for the event log.
+- Notifications by email, phone or push (in-app notices exist), a clock for pledge expiry (it runs when pages load), email or phone verification, password reset, and a page for the event log.
 - Field-level encryption, hash-chained audit logs, per-user budget caps, a Turkish translation.
 - A check of the legal rules for collecting aid in Turkey. This is the biggest open question. The rules for giving used items, especially used medical equipment, have not been checked either.
 - Photo proof of an item handover. It was built and then removed on purpose (`THREAT_MODEL.md`, section 2.7).
@@ -58,8 +69,8 @@ Not built:
 | Role | How it is created | What it can do |
 |---|---|---|
 | Visitor | no account | Browse the board, a need's page and the map |
-| Requester | open sign-up | Post needs, see their status and funding, withdraw a need, confirm or dispute pledges marked sent, ask for items, confirm or dispute item handovers |
-| Supporter | open sign-up | Pledge, see their pledges and the account to pay into, mark as sent, cancel, offer units of an item and mark them handed over |
+| Requester | open sign-up | Post needs, see their status and funding, withdraw a need, confirm or dispute pledges marked sent, ask for items, confirm or dispute item handovers, delete their account |
+| Supporter | open sign-up | Pledge, see their pledges and the account to pay into, mark as sent, cancel, offer units of an item and mark them handed over, delete their account |
 | Verifier | `seed_verifier.py` | Review and approve or reject needs, see private details and contacts, settle disputes, release or decline item offers |
 | Analyst | `seed_users.py` | Run private counts |
 | Admin | `seed_users.py` | See the audit log and the budgets, never results or needs |
@@ -98,7 +109,7 @@ To regenerate the two Python lists, run these from the project root, in this ord
 The scripts in `dev/` are run from the project root as modules, for example `python -m dev.test_board`. Each asks for the database owner's password with hidden input, refuses to run on a database without this schema, and creates and removes its own throwaway accounts. They never touch real accounts or the real budgets. Do not run them against a database that holds real data. To run the main ones in turn:
 
 ```powershell
-foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics") {
+foreach ($t in "test_schema","test_roles","test_admin","test_requesters","test_verifiers","test_board","test_supporters","test_receipts","test_suggestion","test_friendly_errors","test_polish","test_notices","test_header","test_stats","test_analytics_engine","test_analytics_routes","test_withdrawal_reason","test_item_schema","test_item_posting","test_item_verify","test_item_board","test_item_claims","test_item_handover","test_item_chase","test_item_stats","test_item_analytics","test_pledge_code","test_notifications","test_account_delete","test_approve_link","test_signin_polish","test_empty_hint") {
   "=== $t"
   python -m dev.$t 2>&1 | Select-String "^FAIL|PASS|Traceback|AssertionError"
 }
