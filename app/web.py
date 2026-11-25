@@ -27,6 +27,19 @@ def _read_csrf(request: Request):
         return None
 
 
+def _banner(ctx):
+    """Unread notifications of the signed-in person, newest first: at most three, each row carrying the unread total."""
+    uid = getattr(ctx.get("user"), "id", None)
+    if uid is None:
+        return None
+    from sqlalchemy import text
+    from app.db import engine
+    with engine.connect() as c:
+        rows = c.execute(text("SELECT id, message, link, count(*) OVER () AS total FROM notifications "
+                              "WHERE user_id = :u AND read_at IS NULL ORDER BY id DESC LIMIT 3"), {"u": uid}).all()
+    return rows or None
+
+
 def render(request: Request, name: str, status_code: int = 200, **ctx):
     raw = _read_csrf(request)
     new_cookie = None
@@ -34,7 +47,7 @@ def render(request: Request, name: str, status_code: int = 200, **ctx):
         raw = secrets.token_urlsafe(24)
         new_cookie = _csrf_signer.dumps(raw)
     resp = templates.TemplateResponse(
-        request, name, {"csrf": raw, **ctx}, status_code=status_code
+        request, name, {"csrf": raw, "banner": _banner(ctx), **ctx}, status_code=status_code
     )
     if new_cookie:
         resp.set_cookie(CSRF_COOKIE, new_cookie, httponly=True, samesite="strict")

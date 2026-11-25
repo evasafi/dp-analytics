@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+  <p>Signed in as <strong>{{ user.username }}</strong> ({{ user.role }}). <a href="/">Back to my page</a></p>
+  <h3>Notifications</h3>
+  {% if not rows %}<p>No notifications yet.</p>{% else %}
+  <table>
+    <tr><th>When</th><th>What</th><th></th></tr>
+    {% for r in rows %}
+    <tr><td style="white-space: nowrap">{{ r.when }}</td><td>{% if r.unread %}<strong>New.</strong> {% endif %}{{ r.message }}</td><td>{% if r.link %}<a href="{{ r.link }}">Open</a>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="note">The most recent 100 are shown. Opening this page marks all of them as read.</p>
+  {% endif %}
+{% endblock %}

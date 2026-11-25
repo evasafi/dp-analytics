@@ -7,6 +7,10 @@
 </head>
 <body>
   <h1>AidBridge</h1>
+  {% if banner %}<div class="alerts" role="status">
+    {% for b in banner %}<p>{{ b.message }}{% if b.link %} <a href="{{ b.link }}">Open</a>{% endif %}</p>{% endfor %}
+    <p class="note"><a href="/notifications">All notifications{% if banner[0].total > banner|length %} ({{ banner[0].total }} unread){% endif %}</a></p>
+  </div>{% elif user and user.id %}<p class="note"><a href="/notifications">Notifications</a></p>{% endif %}
   {% block content %}{% endblock %}
 </body>
 </html>

@@ -163,6 +163,7 @@ try:
     check("first donor does not see the second code", code2 not in c1.get("/support").text)
     c2.post(f"/support/{pid2}/cancel", data={"csrf": t2}, follow_redirects=False)
     check("pledge cancelled", one("SELECT status FROM pledges WHERE id = :p", p=pid2) == "cancelled")
+    c2.get("/notifications")  # opening the history marks the banner read, so only the table is left
     check("a cancelled pledge no longer shows its code", code2 not in c2.get("/support").text)
 finally:
     cleanup()

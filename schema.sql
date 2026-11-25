@@ -737,3 +737,151 @@ ALTER TABLE pledges ENABLE TRIGGER pledges_fulfil;
 ALTER TABLE pledges ALTER COLUMN ref_code SET NOT NULL;
 ALTER TABLE pledges ADD CONSTRAINT pledges_ref_code_key UNIQUE (ref_code);
 -- END ref code
+
+-- ---------------------------------------------------------------- notifications
+-- In-app notices. Only the database writes them (security definer functions fired by status changes), so
+-- the app role cannot forge or rewrite one: it can read rows and set read_at, nothing else. The text is
+-- built from fixed templates plus amounts, ids and the reference code. It never carries a name or contact.
+-- BEGIN notifications
+CREATE TABLE notifications (
+    id         bigserial PRIMARY KEY,
+    user_id    bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message    text NOT NULL CHECK (length(message) BETWEEN 1 AND 300),
+    link       text CHECK (link IS NULL OR link ~ '^/[A-Za-z0-9/_-]*$'),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    read_at    timestamptz
+);
+CREATE INDEX notifications_user ON notifications (user_id, id DESC);
+CREATE INDEX notifications_unread ON notifications (user_id) WHERE read_at IS NULL;
+
+CREATE FUNCTION add_notification(uid bigint, msg text, lnk text) RETURNS void AS $$
+BEGIN
+    INSERT INTO notifications (user_id, message, link) VALUES (uid, msg, lnk);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+REVOKE EXECUTE ON FUNCTION add_notification(bigint, text, text) FROM PUBLIC;
+
+CREATE FUNCTION notify_pledge() RETURNS trigger AS $$
+DECLARE
+    n   needs%ROWTYPE;
+    amt text := NEW.amount_try::text || ' TRY';
+    ref text := ' (reference ' || NEW.ref_code || ')';
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        PERFORM add_notification(NEW.supporter_id, 'Your pledge of ' || amt || ' is now in progress. Send the money to the account shown, put reference code ' || NEW.ref_code || ' in the transfer description, then mark the pledge as sent.', '/support');
+        RETURN NULL;
+    END IF;
+    IF NEW.status = OLD.status THEN
+        RETURN NULL;
+    END IF;
+    SELECT * INTO n FROM needs WHERE id = NEW.need_id;
+    IF OLD.status = 'pledged' AND NEW.status = 'sent' THEN
+        PERFORM add_notification(n.requester_id, 'A donor says they sent ' || amt || ref || ' to your account. Open your page to answer.', '/needs/mine');
+    ELSIF OLD.status = 'sent' AND NEW.status = 'confirmed' THEN
+        PERFORM add_notification(NEW.supporter_id, 'Your pledge of ' || amt || ref || ' was confirmed as received. Thank you.', '/support');
+    ELSIF OLD.status = 'sent' AND NEW.status = 'disputed' THEN
+        PERFORM add_notification(NEW.supporter_id, 'The requester says your pledge of ' || amt || ref || ' did not arrive. A verifier may contact you. Keep your proof of transfer.', '/support');
+    ELSIF OLD.status = 'disputed' AND NEW.status = 'confirmed' THEN
+        PERFORM add_notification(NEW.supporter_id, 'A verifier settled the dispute: your pledge of ' || amt || ref || ' counts as received. Thank you.', '/support');
+        PERFORM add_notification(n.requester_id, 'A verifier settled the dispute on a pledge of ' || amt || ref || ': it counts as received.', '/needs/mine');
+    ELSIF OLD.status = 'disputed' AND NEW.status = 'cancelled' THEN
+        PERFORM add_notification(NEW.supporter_id, 'A verifier settled the dispute: your pledge of ' || amt || ref || ' counts as not received and is cancelled.', '/support');
+        PERFORM add_notification(n.requester_id, 'A verifier settled the dispute on a pledge of ' || amt || ref || ': it counts as not received and the amount is open again.', '/needs/mine');
+    ELSIF OLD.status = 'pledged' AND NEW.status = 'expired' THEN
+        PERFORM add_notification(NEW.supporter_id, 'Your pledge of ' || amt || ref || ' expired because it was not marked as sent in time. The amount is open again.', '/support');
+    ELSIF OLD.status = 'pledged' AND NEW.status = 'cancelled' AND n.status = 'withdrawn' THEN
+        PERFORM add_notification(NEW.supporter_id, 'Your pledge of ' || amt || ref || ' was cancelled because the requester withdrew the request.', '/support');
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+CREATE TRIGGER pledges_notify AFTER INSERT OR UPDATE ON pledges
+    FOR EACH ROW EXECUTE FUNCTION notify_pledge();
+
+CREATE FUNCTION notify_item_claim() RETURNS trigger AS $$
+DECLARE
+    n     needs%ROWTYPE;
+    iname text;
+    what  text;
+BEGIN
+    SELECT * INTO n FROM needs WHERE id = NEW.need_id;
+    SELECT name INTO iname FROM item_types WHERE id = n.item_type_id;
+    what := NEW.units::text || CASE WHEN NEW.units = 1 THEN ' unit' ELSE ' units' END || ' of ' || COALESCE(iname, 'items');
+    IF TG_OP = 'INSERT' THEN
+        PERFORM add_notification(NEW.donor_id, 'Your offer of ' || what || ' is recorded. A verifier will pass your contact to the requester, who will then get in touch.', '/support');
+        RETURN NULL;
+    END IF;
+    IF OLD.released_at IS NULL AND NEW.released_at IS NOT NULL THEN
+        PERFORM add_notification(n.requester_id, 'A donor offered ' || what || ' for your request #' || n.id || '. Their contact is on your page: agree the handover with them.', '/needs/mine');
+        PERFORM add_notification(NEW.donor_id, 'A verifier passed your contact to the requester. Agree the handover with them, then mark it as handed over.', '/support');
+    END IF;
+    IF NEW.status = OLD.status THEN
+        RETURN NULL;
+    END IF;
+    IF OLD.status = 'pledged' AND NEW.status = 'sent' THEN
+        PERFORM add_notification(n.requester_id, 'A donor says they handed over ' || what || '. Say whether you received them.', '/needs/mine');
+    ELSIF OLD.status = 'sent' AND NEW.status = 'confirmed' THEN
+        PERFORM add_notification(NEW.donor_id, 'The requester confirmed that they received ' || what || '. Thank you.', '/support');
+    ELSIF OLD.status = 'sent' AND NEW.status = 'disputed' THEN
+        PERFORM add_notification(NEW.donor_id, 'The requester says they did not receive ' || what || '. A verifier may contact you.', '/support');
+    ELSIF OLD.status = 'disputed' AND NEW.status = 'confirmed' THEN
+        PERFORM add_notification(NEW.donor_id, 'A verifier settled the dispute: your handover of ' || what || ' counts as received. Thank you.', '/support');
+        PERFORM add_notification(n.requester_id, 'A verifier settled the dispute on ' || what || ': it counts as received.', '/needs/mine');
+    ELSIF OLD.status = 'disputed' AND NEW.status = 'cancelled' THEN
+        PERFORM add_notification(NEW.donor_id, 'A verifier settled the dispute: your handover of ' || what || ' counts as not received and is cancelled.', '/support');
+        PERFORM add_notification(n.requester_id, 'A verifier settled the dispute on ' || what || ': it counts as not received and the units are open again.', '/needs/mine');
+    ELSIF OLD.status = 'pledged' AND NEW.status = 'expired' THEN
+        PERFORM add_notification(NEW.donor_id, 'Your offer of ' || what || ' expired because it was not handed over in time. The units are open again.', '/support');
+    ELSIF OLD.status = 'pledged' AND NEW.status = 'cancelled' AND n.status = 'withdrawn' THEN
+        PERFORM add_notification(NEW.donor_id, 'Your offer of ' || what || ' was cancelled because the requester withdrew the request.', '/support');
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+CREATE TRIGGER item_claims_notify AFTER INSERT OR UPDATE ON item_claims
+    FOR EACH ROW EXECUTE FUNCTION notify_item_claim();
+
+CREATE FUNCTION notify_need() RETURNS trigger AS $$
+BEGIN
+    IF OLD.status = 'pending' AND NEW.status = 'published' THEN
+        PERFORM add_notification(NEW.requester_id, 'Your request #' || NEW.id || ' was approved and is now on the public board.', '/needs/mine');
+    ELSIF OLD.status = 'pending' AND NEW.status = 'rejected' THEN
+        PERFORM add_notification(NEW.requester_id, 'Your request #' || NEW.id || ' was not approved. Open your page to see the reason from the verifier.', '/needs/mine');
+    ELSIF OLD.status = 'published' AND NEW.status = 'fulfilled' THEN
+        PERFORM add_notification(NEW.requester_id, 'Your request #' || NEW.id || ' is fully covered.', '/needs/mine');
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+CREATE TRIGGER needs_notify AFTER UPDATE OF status ON needs
+    FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
+    EXECUTE FUNCTION notify_need();
+
+GRANT SELECT ON notifications TO dp_app;
+GRANT UPDATE (read_at) ON notifications TO dp_app;
+REVOKE INSERT, DELETE, TRUNCATE ON notifications FROM dp_app;
+-- END notifications
+
+-- ---------------------------------------------------------------- declined item offers
+-- The verifier's decline route writes a claim_declined event whose note starts with the claim id. The donor
+-- gets a fixed notice; the reason stays on their page.
+-- BEGIN decline notice
+CREATE FUNCTION notify_claim_declined() RETURNS trigger AS $$
+DECLARE
+    cid bigint;
+    k   item_claims%ROWTYPE;
+BEGIN
+    cid := substring(NEW.note from '^claim ([0-9]+):')::bigint;
+    IF cid IS NOT NULL THEN
+        SELECT * INTO k FROM item_claims WHERE id = cid;
+        IF FOUND THEN
+            PERFORM add_notification(k.donor_id, 'A verifier declined your item offer. Open your page to see the reason.', '/support');
+        END IF;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+CREATE TRIGGER need_events_notify AFTER INSERT ON need_events
+    FOR EACH ROW WHEN (NEW.event = 'claim_declined')
+    EXECUTE FUNCTION notify_claim_declined();
+-- END decline notice
